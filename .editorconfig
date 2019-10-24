@@ -1,0 +1,5 @@
+[*]
+indent_style = tab
+
+[Makefile]
+indent_size = 8
