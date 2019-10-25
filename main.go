@@ -94,6 +94,8 @@ func (d cephfsDriver) List() (*volume.ListResponse, error) {
 	defer d.RUnlock()
 
 	var vols []*volume.Volume
+	vols = make([]*volume.Volume, 0)
+
 	err := d.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(volumeBucket)
 		return b.ForEach(func(k, v []byte) error {
