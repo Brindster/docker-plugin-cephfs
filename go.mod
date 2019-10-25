@@ -1,4 +1,4 @@
-module docker-plugin-ceph
+module docker-plugin-cephfs
 
 go 1.13
 

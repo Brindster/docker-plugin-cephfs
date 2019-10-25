@@ -392,7 +392,7 @@ func newCephFsDriver() cephfsDriver {
 	servers := strings.Split(srv, ",")
 
 	driver := cephfsDriver{
-		configPath:  envOrDefault("CONFIG_PATH", defaultConfigPath),
+		configPath:  defaultConfigPath,
 		clientName:  envOrDefault("CLIENT_NAME", defaultClientName),
 		clusterName: envOrDefault("CLUSTER_NAME", defaultClusterName),
 		servers:     servers,

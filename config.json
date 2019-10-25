@@ -1,2 +1,52 @@
 {
+	"description": "Volume plugin for mounting CephFS filesystems",
+	"documentation": "https://docs.docker.com/engine/extend/plugins/",
+	"entrypoint": ["docker-plugin-cephfs"],
+	"propagatedMount": "/var/lib/docker-volumes",
+	"network": {
+		"type": "host"
+	},
+	"interface" : {
+		"types": ["docker.volumedriver/1.0"],
+		"socket": "cephfs.sock"
+	},
+	"linux": {
+		"capabilities": ["CAP_SYS_ADMIN"]
+	},
+	"env": [
+		{
+			"Name": "CLIENT_NAME",
+			"Description": "Default client name to connect to the ceph cluster with when none specified",
+			"Settable": ["value"],
+			"Value": "admin"
+		},
+		{
+			"Name": "CLUSTER_NAME",
+			"Description": "Default cluster name to connect to",
+			"Settable":  ["value"],
+			"Value": "ceph"
+		},
+		{
+			"Name": "SERVERS",
+			"Description": "Comma-delimited list of ceph monitors to connect to",
+			"Settable":  ["value"],
+			"Value": "localhost"
+		}
+	],
+	"mounts": [
+		{
+			"name": "Ceph config",
+			"description": "Mount containing Ceph configuration",
+			"source": "/etc/ceph",
+			"destination": "/etc/ceph",
+			"type": "bind",
+			"options": ["rbind"]
+		},
+		{
+			"source": "/lib/modules",
+			"destination": "/lib/modules",
+			"type": "bind",
+			"options": ["rbind"]
+		}
+	]
 }

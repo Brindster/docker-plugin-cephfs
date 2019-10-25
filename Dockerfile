@@ -6,9 +6,9 @@ WORKDIR /go/src/app
 COPY . .
 
 RUN go install --ldflags '-extldflags "-static"'
-CMD ["/go/bin/docker-plugin-ceph"]
+CMD ["/go/bin/docker-plugin-cephfs"]
 
 FROM alpine
 RUN apk add --no-cache ceph-common
-COPY --from=build /go/bin/docker-plugin-ceph /usr/local/bin/
-CMD ["docker-plugin-ceph"]
+COPY --from=build /go/bin/docker-plugin-cephfs /usr/local/bin/
+CMD ["docker-plugin-cephfs"]

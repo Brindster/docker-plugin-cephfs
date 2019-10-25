@@ -9,10 +9,11 @@ clean:
 	rm -rf ./build
 
 build:
+	docker rmi --force ${PLUGIN_NAME}:rfs || true
 	docker build --quiet --tag ${PLUGIN_NAME}:rfs .
+	docker create --name tmp ${PLUGIN_NAME}:rfs sh
 	mkdir -p build/rootfs
-	docker create --name tmp ${PLUGIN_NAME}:rfs true
-	docker export tmp | tar -x -C build/rootfs
+	docker export tmp | tar -x -C build/rootfs/
 	cp config.json ./build/
 	docker rm -vf tmp
 
