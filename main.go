@@ -60,7 +60,7 @@ func (d cephfsDriver) Create(req *volume.CreateRequest) error {
 	v := cephfsVolume{
 		ClientName:  d.clientName,
 		MountPoint:  "",
-		CreatedAt:   time.Now().String(),
+		CreatedAt:   time.Now().Format(time.RFC3339),
 		Status:      nil,
 		Servers:     d.servers,
 		ClusterName: d.clusterName,
