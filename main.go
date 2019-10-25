@@ -350,17 +350,17 @@ func (v cephfsVolume) serialize() ([]byte, error) {
 }
 
 func unserialize(in []byte) (*cephfsVolume, error) {
-	var out cephfsVolume
 	var buf bytes.Buffer
 
 	buf.Write(in)
 
+	out := &cephfsVolume{}
 	dec := gob.NewDecoder(&buf)
 	if err := dec.Decode(out); err != nil {
 		return nil, err
 	}
 
-	return &out, nil
+	return out, nil
 }
 
 func envOrDefault(param, def string) string {
@@ -376,7 +376,7 @@ func newCephFsDriver() cephfsDriver {
 	// It will be created if it doesn't exist.
 	db, err := bolt.Open(socketName+".db", 0600, nil)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Could not open the database: %s", err)
 	}
 
 	err = db.Update(func(tx *bolt.Tx) error {
