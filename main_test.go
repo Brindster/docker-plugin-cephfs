@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/boltdb/bolt"
-	"github.com/docker/go-plugins-helpers/volume"
+	plugin "github.com/docker/go-plugins-helpers/volume"
 	"log"
 	"reflect"
 	"strconv"
@@ -12,7 +12,7 @@ import (
 )
 
 func Test_cephfsDriver_Capabilities(t *testing.T) {
-	type driver struct {
+	type fields struct {
 		configPath  string
 		clientName  string
 		clusterName string
@@ -20,7 +20,7 @@ func Test_cephfsDriver_Capabilities(t *testing.T) {
 		DB          *bolt.DB
 		RWMutex     sync.RWMutex
 	}
-	drv := driver{
+	drv := fields{
 		configPath:  defaultConfigPath,
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
@@ -31,20 +31,20 @@ func Test_cephfsDriver_Capabilities(t *testing.T) {
 	defer must(drv.DB.Close)
 	tests := []struct {
 		name   string
-		driver driver
-		want   *volume.CapabilitiesResponse
+		fields fields
+		want   *plugin.CapabilitiesResponse
 	}{
-		{"local", drv, &volume.CapabilitiesResponse{Capabilities: volume.Capability{Scope: "local"}}},
+		{"local", drv, &plugin.CapabilitiesResponse{Capabilities: plugin.Capability{Scope: "local"}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
-				configPath:  tt.driver.configPath,
-				clientName:  tt.driver.clientName,
-				clusterName: tt.driver.clusterName,
-				servers:     tt.driver.servers,
-				DB:          tt.driver.DB,
-				RWMutex:     tt.driver.RWMutex,
+			d := driver{
+				configPath:  tt.fields.configPath,
+				clientName:  tt.fields.clientName,
+				clusterName: tt.fields.clusterName,
+				servers:     tt.fields.servers,
+				DB:          tt.fields.DB,
+				RWMutex:     tt.fields.RWMutex,
 			}
 			if got := d.Capabilities(); !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("Capabilities() = %v, want %v", got, tt.want)
@@ -54,7 +54,7 @@ func Test_cephfsDriver_Capabilities(t *testing.T) {
 }
 
 func Test_cephfsDriver_Create(t *testing.T) {
-	type driver struct {
+	type fields struct {
 		configPath  string
 		clientName  string
 		clusterName string
@@ -63,9 +63,9 @@ func Test_cephfsDriver_Create(t *testing.T) {
 		RWMutex     sync.RWMutex
 	}
 	type args struct {
-		req *volume.CreateRequest
+		req *plugin.CreateRequest
 	}
-	drv := driver{
+	drv := fields{
 		configPath:  defaultConfigPath,
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
@@ -76,44 +76,44 @@ func Test_cephfsDriver_Create(t *testing.T) {
 	defer must(drv.DB.Close)
 	tests := []struct {
 		name    string
-		driver  driver
+		fields  fields
 		args    args
 		wantErr bool
-		want    *cephfsVolume
+		want    *volume
 	}{
-		{"valid", drv, args{&volume.CreateRequest{Name: "test.1"}}, false, &cephfsVolume{
+		{"valid", drv, args{&plugin.CreateRequest{Name: "test.1"}}, false, &volume{
 			ClientName:  defaultClientName,
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
 		}},
-		{"with client_name", drv, args{&volume.CreateRequest{Name: "test.2", Options: map[string]string{"client_name": "user"}}}, false, &cephfsVolume{
+		{"with client_name", drv, args{&plugin.CreateRequest{Name: "test.2", Options: map[string]string{"client_name": "user"}}}, false, &volume{
 			ClientName:  "user",
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
 		}},
-		{"with mount_opts", drv, args{&volume.CreateRequest{Name: "test.3", Options: map[string]string{"mount_opts": "name=user,secret=abc"}}}, false, &cephfsVolume{
+		{"with mount_opts", drv, args{&plugin.CreateRequest{Name: "test.3", Options: map[string]string{"mount_opts": "name=user,secret=abc"}}}, false, &volume{
 			ClientName:  defaultClientName,
 			MountOpts:   "name=user,secret=abc",
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
 		}},
-		{"with remote_path", drv, args{&volume.CreateRequest{Name: "test.4", Options: map[string]string{"remote_path": "/data/mnt"}}}, false, &cephfsVolume{
+		{"with remote_path", drv, args{&plugin.CreateRequest{Name: "test.4", Options: map[string]string{"remote_path": "/data/mnt"}}}, false, &volume{
 			ClientName:  defaultClientName,
 			RemotePath:  "/data/mnt",
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
 		}},
-		{"with servers", drv, args{&volume.CreateRequest{Name: "test.5", Options: map[string]string{"servers": "monitor1:6798,monitor2:6798"}}}, false, &cephfsVolume{
+		{"with servers", drv, args{&plugin.CreateRequest{Name: "test.5", Options: map[string]string{"servers": "monitor1:6798,monitor2:6798"}}}, false, &volume{
 			ClientName:  defaultClientName,
 			Servers:     []string{"monitor1:6798", "monitor2:6798"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
 		}},
-		{"duplicate name", drv, args{&volume.CreateRequest{Name: "test.1"}}, false, &cephfsVolume{
+		{"duplicate name", drv, args{&plugin.CreateRequest{Name: "test.1"}}, false, &volume{
 			ClientName:  defaultClientName,
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
@@ -122,13 +122,13 @@ func Test_cephfsDriver_Create(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
-				configPath:  tt.driver.configPath,
-				clientName:  tt.driver.clientName,
-				clusterName: tt.driver.clusterName,
-				servers:     tt.driver.servers,
-				DB:          tt.driver.DB,
-				RWMutex:     tt.driver.RWMutex,
+			d := driver{
+				configPath:  tt.fields.configPath,
+				clientName:  tt.fields.clientName,
+				clusterName: tt.fields.clusterName,
+				servers:     tt.fields.servers,
+				DB:          tt.fields.DB,
+				RWMutex:     tt.fields.RWMutex,
 			}
 			if err := d.Create(tt.args.req); (err != nil) != tt.wantErr {
 				t.Errorf("Create() error = %v, wantErr %v", err, tt.wantErr)
@@ -146,7 +146,7 @@ func Test_cephfsDriver_Create(t *testing.T) {
 }
 
 func Test_cephfsDriver_Get(t *testing.T) {
-	type driver struct {
+	type fields struct {
 		configPath  string
 		clientName  string
 		clusterName string
@@ -155,9 +155,9 @@ func Test_cephfsDriver_Get(t *testing.T) {
 		RWMutex     sync.RWMutex
 	}
 	type args struct {
-		req *volume.GetRequest
+		req *plugin.GetRequest
 	}
-	drv := driver{
+	drv := fields{
 		configPath:  defaultConfigPath,
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
@@ -166,7 +166,7 @@ func Test_cephfsDriver_Get(t *testing.T) {
 		RWMutex:     sync.RWMutex{},
 	}
 	defer must(drv.DB.Close)
-	vols := []cephfsVolume{
+	vols := []volume{
 		{
 			MountPoint: "",
 			CreatedAt:  "2019-01-01T01:01:01Z",
@@ -194,34 +194,34 @@ func Test_cephfsDriver_Get(t *testing.T) {
 	})
 	tests := []struct {
 		name    string
-		driver  driver
+		fields  fields
 		args    args
-		want    *volume.GetResponse
+		want    *plugin.GetResponse
 		wantErr bool
 	}{
-		{"get existing", drv, args{&volume.GetRequest{Name: "test.1"}}, &volume.GetResponse{Volume: &volume.Volume{
+		{"get existing", drv, args{&plugin.GetRequest{Name: "test.1"}}, &plugin.GetResponse{Volume: &plugin.Volume{
 			Name:       "test.1",
 			Mountpoint: "",
 			CreatedAt:  "2019-01-01T01:01:01Z",
 			Status:     nil,
 		}}, false},
-		{"get mounted", drv, args{&volume.GetRequest{Name: "test.2"}}, &volume.GetResponse{Volume: &volume.Volume{
+		{"get mounted", drv, args{&plugin.GetRequest{Name: "test.2"}}, &plugin.GetResponse{Volume: &plugin.Volume{
 			Name:       "test.2",
 			Mountpoint: "/var/www/app/data",
 			CreatedAt:  "2019-02-02T02:02:02Z",
 			Status:     nil,
 		}}, false},
-		{"non existing", drv, args{&volume.GetRequest{Name: "invalid"}}, nil, true},
+		{"non existing", drv, args{&plugin.GetRequest{Name: "invalid"}}, nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
-				configPath:  tt.driver.configPath,
-				clientName:  tt.driver.clientName,
-				clusterName: tt.driver.clusterName,
-				servers:     tt.driver.servers,
-				DB:          tt.driver.DB,
-				RWMutex:     tt.driver.RWMutex,
+			d := driver{
+				configPath:  tt.fields.configPath,
+				clientName:  tt.fields.clientName,
+				clusterName: tt.fields.clusterName,
+				servers:     tt.fields.servers,
+				DB:          tt.fields.DB,
+				RWMutex:     tt.fields.RWMutex,
 			}
 			got, err := d.Get(tt.args.req)
 			if (err != nil) != tt.wantErr {
@@ -247,14 +247,14 @@ func Test_cephfsDriver_List(t *testing.T) {
 	tests := []struct {
 		name    string
 		fields  fields
-		want    *volume.ListResponse
+		want    *plugin.ListResponse
 		wantErr bool
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
+			d := driver{
 				configPath:  tt.fields.configPath,
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
@@ -284,20 +284,20 @@ func Test_cephfsDriver_Mount(t *testing.T) {
 		RWMutex     sync.RWMutex
 	}
 	type args struct {
-		req *volume.MountRequest
+		req *plugin.MountRequest
 	}
 	tests := []struct {
 		name    string
 		fields  fields
 		args    args
-		want    *volume.MountResponse
+		want    *plugin.MountResponse
 		wantErr bool
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
+			d := driver{
 				configPath:  tt.fields.configPath,
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
@@ -327,20 +327,20 @@ func Test_cephfsDriver_Path(t *testing.T) {
 		RWMutex     sync.RWMutex
 	}
 	type args struct {
-		req *volume.PathRequest
+		req *plugin.PathRequest
 	}
 	tests := []struct {
 		name    string
 		fields  fields
 		args    args
-		want    *volume.PathResponse
+		want    *plugin.PathResponse
 		wantErr bool
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
+			d := driver{
 				configPath:  tt.fields.configPath,
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
@@ -370,7 +370,7 @@ func Test_cephfsDriver_Remove(t *testing.T) {
 		RWMutex     sync.RWMutex
 	}
 	type args struct {
-		req *volume.RemoveRequest
+		req *plugin.RemoveRequest
 	}
 	tests := []struct {
 		name    string
@@ -382,7 +382,7 @@ func Test_cephfsDriver_Remove(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
+			d := driver{
 				configPath:  tt.fields.configPath,
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
@@ -407,7 +407,7 @@ func Test_cephfsDriver_Unmount(t *testing.T) {
 		RWMutex     sync.RWMutex
 	}
 	type args struct {
-		req *volume.UnmountRequest
+		req *plugin.UnmountRequest
 	}
 	tests := []struct {
 		name    string
@@ -419,7 +419,7 @@ func Test_cephfsDriver_Unmount(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
+			d := driver{
 				configPath:  tt.fields.configPath,
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
@@ -450,14 +450,14 @@ func Test_cephfsDriver_fetchVol(t *testing.T) {
 		name    string
 		fields  fields
 		args    args
-		want    *cephfsVolume
+		want    *volume
 		wantErr bool
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
+			d := driver{
 				configPath:  tt.fields.configPath,
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
@@ -488,7 +488,7 @@ func Test_cephfsDriver_saveVol(t *testing.T) {
 	}
 	type args struct {
 		name string
-		vol  cephfsVolume
+		vol  volume
 	}
 	tests := []struct {
 		name    string
@@ -500,7 +500,7 @@ func Test_cephfsDriver_saveVol(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := cephfsDriver{
+			d := driver{
 				configPath:  tt.fields.configPath,
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
@@ -536,7 +536,7 @@ func Test_cephfsVolume_connection(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := cephfsVolume{
+			v := volume{
 				ClientName:  tt.fields.ClientName,
 				MountPoint:  tt.fields.MountPoint,
 				CreatedAt:   tt.fields.CreatedAt,
@@ -579,7 +579,7 @@ func Test_cephfsVolume_mount(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := &cephfsVolume{
+			v := &volume{
 				ClientName:  tt.fields.ClientName,
 				MountPoint:  tt.fields.MountPoint,
 				CreatedAt:   tt.fields.CreatedAt,
@@ -619,7 +619,7 @@ func Test_cephfsVolume_secret(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := cephfsVolume{
+			v := volume{
 				ClientName:  tt.fields.ClientName,
 				MountPoint:  tt.fields.MountPoint,
 				CreatedAt:   tt.fields.CreatedAt,
@@ -664,7 +664,7 @@ func Test_cephfsVolume_serialize(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := cephfsVolume{
+			v := volume{
 				ClientName:  tt.fields.ClientName,
 				MountPoint:  tt.fields.MountPoint,
 				CreatedAt:   tt.fields.CreatedAt,
@@ -708,7 +708,7 @@ func Test_cephfsVolume_unmount(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			v := cephfsVolume{
+			v := volume{
 				ClientName:  tt.fields.ClientName,
 				MountPoint:  tt.fields.MountPoint,
 				CreatedAt:   tt.fields.CreatedAt,
@@ -750,14 +750,14 @@ func Test_envOrDefault(t *testing.T) {
 func Test_newCephFsDriver(t *testing.T) {
 	tests := []struct {
 		name string
-		want cephfsDriver
+		want driver
 	}{
 		// TODO: Add test cases.
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := newCephFsDriver(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("newCephFsDriver() = %v, want %v", got, tt.want)
+			if got := newDriver(); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("newDriver() = %v, want %v", got, tt.want)
 			}
 		})
 	}
@@ -770,7 +770,7 @@ func Test_unserialize(t *testing.T) {
 	tests := []struct {
 		name    string
 		args    args
-		want    *cephfsVolume
+		want    *volume
 		wantErr bool
 	}{
 		// TODO: Add test cases.
@@ -789,7 +789,7 @@ func Test_unserialize(t *testing.T) {
 	}
 }
 
-func volCompare(want, got *cephfsVolume) bool {
+func volCompare(want, got *volume) bool {
 	if (want != nil) != (got != nil) {
 		return false
 	}

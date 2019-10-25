@@ -16,10 +16,10 @@ import (
 	"time"
 
 	//"github.com/ceph/go-ceph/cephfs"
-	"github.com/docker/go-plugins-helpers/volume"
+	plugin "github.com/docker/go-plugins-helpers/volume"
 )
 
-type cephfsVolume struct {
+type volume struct {
 	ClientName string
 	MountPoint string
 	CreatedAt  string
@@ -32,7 +32,7 @@ type cephfsVolume struct {
 	ConfigPath  string
 }
 
-type cephfsDriver struct {
+type driver struct {
 	configPath  string
 	clientName  string
 	clusterName string
@@ -53,11 +53,11 @@ var (
 )
 
 // Create will create a new volume
-func (d cephfsDriver) Create(req *volume.CreateRequest) error {
+func (d driver) Create(req *plugin.CreateRequest) error {
 	d.Lock()
 	defer d.Unlock()
 
-	v := cephfsVolume{
+	v := volume{
 		ClientName:  d.clientName,
 		MountPoint:  "",
 		CreatedAt:   time.Now().Format(time.RFC3339),
@@ -89,12 +89,12 @@ func (d cephfsDriver) Create(req *volume.CreateRequest) error {
 }
 
 // List will list all of the created volumes
-func (d cephfsDriver) List() (*volume.ListResponse, error) {
+func (d driver) List() (*plugin.ListResponse, error) {
 	d.RLock()
 	defer d.RUnlock()
 
-	var vols []*volume.Volume
-	vols = make([]*volume.Volume, 0)
+	var vols []*plugin.Volume
+	vols = make([]*plugin.Volume, 0)
 
 	err := d.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(volumeBucket)
@@ -104,7 +104,7 @@ func (d cephfsDriver) List() (*volume.ListResponse, error) {
 				return err
 			}
 
-			vols = append(vols, &volume.Volume{
+			vols = append(vols, &plugin.Volume{
 				Name:       string(k),
 				Mountpoint: vol.MountPoint,
 				CreatedAt:  vol.CreatedAt,
@@ -119,13 +119,13 @@ func (d cephfsDriver) List() (*volume.ListResponse, error) {
 		return nil, fmt.Errorf("could not read from db: %s", err)
 	}
 
-	return &volume.ListResponse{
+	return &plugin.ListResponse{
 		Volumes: vols,
 	}, nil
 }
 
 // Get will return a single volume
-func (d cephfsDriver) Get(req *volume.GetRequest) (*volume.GetResponse, error) {
+func (d driver) Get(req *plugin.GetRequest) (*plugin.GetResponse, error) {
 	d.RLock()
 	defer d.RUnlock()
 
@@ -134,8 +134,8 @@ func (d cephfsDriver) Get(req *volume.GetRequest) (*volume.GetResponse, error) {
 		return nil, fmt.Errorf("could not read from db: %s", err)
 	}
 
-	return &volume.GetResponse{
-		Volume: &volume.Volume{
+	return &plugin.GetResponse{
+		Volume: &plugin.Volume{
 			Name:       req.Name,
 			Mountpoint: vol.MountPoint,
 			CreatedAt:  vol.CreatedAt,
@@ -145,7 +145,7 @@ func (d cephfsDriver) Get(req *volume.GetRequest) (*volume.GetResponse, error) {
 }
 
 // Remove will remove the volume
-func (d cephfsDriver) Remove(req *volume.RemoveRequest) error {
+func (d driver) Remove(req *plugin.RemoveRequest) error {
 	d.Lock()
 	defer d.Unlock()
 
@@ -162,7 +162,7 @@ func (d cephfsDriver) Remove(req *volume.RemoveRequest) error {
 }
 
 // Path will return the path to the volume
-func (d cephfsDriver) Path(req *volume.PathRequest) (*volume.PathResponse, error) {
+func (d driver) Path(req *plugin.PathRequest) (*plugin.PathResponse, error) {
 	d.RLock()
 	defer d.RUnlock()
 
@@ -171,11 +171,11 @@ func (d cephfsDriver) Path(req *volume.PathRequest) (*volume.PathResponse, error
 		return nil, fmt.Errorf("could not read from db: %s", err)
 	}
 
-	return &volume.PathResponse{Mountpoint: vol.MountPoint}, nil
+	return &plugin.PathResponse{Mountpoint: vol.MountPoint}, nil
 }
 
 // Mount will mount the volume
-func (d cephfsDriver) Mount(req *volume.MountRequest) (*volume.MountResponse, error) {
+func (d driver) Mount(req *plugin.MountRequest) (*plugin.MountResponse, error) {
 	d.Lock()
 	defer d.Unlock()
 
@@ -192,13 +192,13 @@ func (d cephfsDriver) Mount(req *volume.MountRequest) (*volume.MountResponse, er
 		return nil, fmt.Errorf("could not update db: %s", err)
 	}
 
-	return &volume.MountResponse{
+	return &plugin.MountResponse{
 		Mountpoint: vol.MountPoint,
 	}, nil
 }
 
 // Unmount will unmount the volume
-func (d cephfsDriver) Unmount(req *volume.UnmountRequest) error {
+func (d driver) Unmount(req *plugin.UnmountRequest) error {
 	d.Lock()
 	defer d.Unlock()
 
@@ -210,17 +210,17 @@ func (d cephfsDriver) Unmount(req *volume.UnmountRequest) error {
 	return vol.unmount()
 }
 
-// Capabilities will return the capabilities of the cephfsDriver
-func (d cephfsDriver) Capabilities() *volume.CapabilitiesResponse {
-	return &volume.CapabilitiesResponse{
-		Capabilities: volume.Capability{
+// Capabilities will return the capabilities of the driver
+func (d driver) Capabilities() *plugin.CapabilitiesResponse {
+	return &plugin.CapabilitiesResponse{
+		Capabilities: plugin.Capability{
 			Scope: "local",
 		},
 	}
 }
 
-func (d cephfsDriver) fetchVol(name string) (*cephfsVolume, error) {
-	var vol *cephfsVolume
+func (d driver) fetchVol(name string) (*volume, error) {
+	var vol *volume
 	err := d.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(volumeBucket)
 		v := b.Get([]byte(name))
@@ -237,7 +237,7 @@ func (d cephfsDriver) fetchVol(name string) (*cephfsVolume, error) {
 	return vol, err
 }
 
-func (d cephfsDriver) saveVol(name string, vol cephfsVolume) error {
+func (d driver) saveVol(name string, vol volume) error {
 	enc, err := vol.serialize()
 	if err != nil {
 		return fmt.Errorf("could not serialize volume: %s", err)
@@ -249,8 +249,8 @@ func (d cephfsDriver) saveVol(name string, vol cephfsVolume) error {
 	})
 }
 
-func (v *cephfsVolume) mount(mnt string) error {
-	mountPoint := path.Join(volume.DefaultDockerRootDirectory, mnt)
+func (v *volume) mount(mnt string) error {
+	mountPoint := path.Join(plugin.DefaultDockerRootDirectory, mnt)
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
 		return fmt.Errorf("error creating mountpoint %s: %s", mountPoint, err)
 	}
@@ -278,7 +278,7 @@ func (v *cephfsVolume) mount(mnt string) error {
 	return nil
 }
 
-func (v cephfsVolume) unmount() error {
+func (v volume) unmount() error {
 	if v.MountPoint == "" {
 		return fmt.Errorf("volume is not mounted")
 	}
@@ -293,7 +293,7 @@ func (v cephfsVolume) unmount() error {
 	return nil
 }
 
-func (v cephfsVolume) connection() string {
+func (v volume) connection() string {
 	l := len(v.Servers)
 
 	var conn string
@@ -315,7 +315,7 @@ func (v cephfsVolume) connection() string {
 	return conn
 }
 
-func (v cephfsVolume) secret() (string, error) {
+func (v volume) secret() (string, error) {
 	file := defaultClusterName + ".client." + v.ClientName + ".keyring"
 	keyring := strings.TrimRight(defaultConfigPath, "/") + "/" + file
 
@@ -339,7 +339,7 @@ func (v cephfsVolume) secret() (string, error) {
 	return sec.Key("key").String(), nil
 }
 
-func (v cephfsVolume) serialize() ([]byte, error) {
+func (v volume) serialize() ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	if err := enc.Encode(v); err != nil {
@@ -349,12 +349,12 @@ func (v cephfsVolume) serialize() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func unserialize(in []byte) (*cephfsVolume, error) {
+func unserialize(in []byte) (*volume, error) {
 	var buf bytes.Buffer
 
 	buf.Write(in)
 
-	out := &cephfsVolume{}
+	out := &volume{}
 	dec := gob.NewDecoder(&buf)
 	if err := dec.Decode(out); err != nil {
 		return nil, err
@@ -371,7 +371,7 @@ func envOrDefault(param, def string) string {
 	return def
 }
 
-func newCephFsDriver() cephfsDriver {
+func newDriver() driver {
 	// Open the my.db data file in your current directory.
 	// It will be created if it doesn't exist.
 	db, err := bolt.Open(socketName+".db", 0600, nil)
@@ -395,7 +395,7 @@ func newCephFsDriver() cephfsDriver {
 	srv := envOrDefault("SERVERS", "localhost")
 	servers := strings.Split(srv, ",")
 
-	driver := cephfsDriver{
+	driver := driver{
 		configPath:  defaultConfigPath,
 		clientName:  envOrDefault("CLIENT_NAME", defaultClientName),
 		clusterName: envOrDefault("CLUSTER_NAME", defaultClusterName),
@@ -406,7 +406,7 @@ func newCephFsDriver() cephfsDriver {
 }
 
 func main() {
-	driver := newCephFsDriver()
-	handler := volume.NewHandler(driver)
+	driver := newDriver()
+	handler := plugin.NewHandler(driver)
 	log.Fatal(handler.ServeUnix(socketName, 1))
 }
