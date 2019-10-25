@@ -265,9 +265,11 @@ func (v *cephfsVolume) mount(mnt string) error {
 		opts = opts + "," + v.MountOpts
 	}
 
-	cmd := exec.Command("mount", "-t", "ceph", "-o", opts, v.connection(), mountPoint)
+	args := []string{"-t", "ceph", "-o", opts, v.connection(), mountPoint}
+
+	cmd := exec.Command("mount", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Printf("Mount command returned: %s\n", out)
+		fmt.Printf("Mount command executed: %s\nMount command returned: %s\n", "mount "+strings.Join(args, " "), out)
 		return fmt.Errorf("error mounting: %s", err)
 	}
 
