@@ -30,6 +30,7 @@ type volume struct {
 	Servers     []string
 	ClusterName string
 	ConfigPath  string
+	Keyring     string
 }
 
 type driver struct {
@@ -65,12 +66,16 @@ func (d driver) Create(req *plugin.CreateRequest) error {
 		Servers:     d.servers,
 		ClusterName: d.clusterName,
 		ConfigPath:  d.configPath,
+		Keyring:     fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.configPath, "/"), d.clusterName, d.clientName),
 	}
 
 	for key, val := range req.Options {
 		switch key {
 		case "client_name":
 			v.ClientName = val
+			v.Keyring = fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.configPath, "/"), d.clusterName, val)
+		case "keyring":
+			v.Keyring = val
 		case "mount_opts":
 			v.MountOpts = val
 		case "remote_path":
@@ -316,15 +321,12 @@ func (v volume) connection() string {
 }
 
 func (v volume) secret() (string, error) {
-	file := defaultClusterName + ".client." + v.ClientName + ".keyring"
-	keyring := strings.TrimRight(defaultConfigPath, "/") + "/" + file
-
-	cnf, err := ini.Load(keyring)
+	cnf, err := ini.Load(v.Keyring)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", fmt.Errorf("keyring not found: %s", keyring)
+			return "", fmt.Errorf("keyring not found: %s", v.Keyring)
 		}
-		return "", fmt.Errorf("could not open keyring %s", keyring)
+		return "", fmt.Errorf("could not open keyring %s", v.Keyring)
 	}
 
 	sec, err := cnf.GetSection("client." + v.ClientName)
