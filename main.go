@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"github.com/boltdb/bolt"
-	"gopkg.in/ini.v1"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
@@ -15,8 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	//"github.com/ceph/go-ceph/cephfs"
+	"github.com/boltdb/bolt"
 	plugin "github.com/docker/go-plugins-helpers/volume"
+	"gopkg.in/ini.v1"
 )
 
 type volume struct {
@@ -255,6 +255,12 @@ func (d driver) saveVol(name string, vol volume) error {
 }
 
 func (v *volume) mount(mnt string) error {
+	if v.RemotePath != "" && v.RemotePath != "/" {
+		if err := v.createRemoteMount(); err != nil {
+			return fmt.Errorf("error creating remote directory: %s", err)
+		}
+	}
+
 	mountPoint := path.Join(plugin.DefaultDockerRootDirectory, mnt)
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
 		return fmt.Errorf("error creating mountpoint %s: %s", mountPoint, err)
@@ -270,15 +276,60 @@ func (v *volume) mount(mnt string) error {
 		opts = opts + "," + v.MountOpts
 	}
 
-	args := []string{"-t", "ceph", "-o", opts, v.connection(), mountPoint}
-
-	cmd := exec.Command("mount", args...)
+	connStr := connstr(v.Servers, v.RemotePath)
+	cmd := exec.Command("mount", "-t", "ceph", "-o", opts, connStr, mountPoint)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		fmt.Printf("Mount command executed: %s\nMount command returned: %s\n", "mount "+strings.Join(args, " "), out)
-		return fmt.Errorf("error mounting: %s", err)
+		return fmt.Errorf("error mounting: %s\ncommand output: %s", err, out)
 	}
 
 	v.MountPoint = mountPoint
+
+	return nil
+}
+
+func (v volume) createRemoteMount() error {
+	mountPoint, err := ioutil.TempDir("", "mnt_")
+	if err != nil {
+		return fmt.Errorf("error creating temporary mountpoint: %s", err)
+	}
+
+	secret, err := v.secret()
+	if err != nil {
+		return fmt.Errorf("error loading secret: %s", err)
+	}
+
+	opts := "name=" + v.ClientName + ",secret=" + secret
+	if v.MountOpts != "" {
+		opts = opts + "," + v.MountOpts
+	}
+
+	connStr := connstr(v.Servers, "")
+	cmd := exec.Command("mount", "-t", "ceph", "-o", opts, connStr, mountPoint)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("error mounting: %s\ncommand output: %s", err, out)
+	}
+
+	desiredMount := path.Join(mountPoint, v.RemotePath)
+	stat, err := os.Stat(desiredMount)
+	if !os.IsNotExist(err) {
+		if err = syscall.Unmount(mountPoint, 0); err != nil {
+			return fmt.Errorf("failed unmounting volume: %s", err)
+		}
+
+		if !stat.IsDir() {
+			return fmt.Errorf("remote mount is a file")
+		}
+
+		return nil
+	}
+
+	if err = os.MkdirAll(desiredMount, 0755); err != nil {
+		return fmt.Errorf("unable to make remote mount: %s", err)
+	}
+
+	if err = syscall.Unmount(mountPoint, 0); err != nil {
+		return fmt.Errorf("failed unmounting volume: %s", err)
+	}
 
 	return nil
 }
@@ -296,28 +347,6 @@ func (v volume) unmount() error {
 	v.MountPoint = ""
 
 	return nil
-}
-
-func (v volume) connection() string {
-	l := len(v.Servers)
-
-	var conn string
-	for id, server := range v.Servers {
-		conn += server
-
-		if id != l-1 {
-			conn += ","
-		}
-	}
-
-	conn += ":"
-	if v.RemotePath == "" {
-		conn += "/"
-	} else {
-		conn += v.RemotePath
-	}
-
-	return conn
 }
 
 func (v volume) secret() (string, error) {
@@ -363,6 +392,25 @@ func unserialize(in []byte) (*volume, error) {
 	}
 
 	return out, nil
+}
+
+func connstr(srvs []string, path string) string {
+	l := len(srvs)
+
+	var conn string
+	for id, server := range srvs {
+		conn += server
+
+		if id != l-1 {
+			conn += ","
+		}
+	}
+
+	if path == "" {
+		path = "/"
+	}
+
+	return fmt.Sprintf("%s:%s", conn, path)
 }
 
 func envOrDefault(param, def string) string {
