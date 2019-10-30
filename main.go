@@ -421,21 +421,10 @@ func envOrDefault(param, def string) string {
 	return def
 }
 
-func newDriver() driver {
-	// Open the my.db data file in your current directory.
-	// It will be created if it doesn't exist.
-	db, err := bolt.Open(socketName+".db", 0600, nil)
-	if err != nil {
-		log.Fatalf("Could not open the database: %s", err)
-	}
-
-	err = db.Update(func(tx *bolt.Tx) error {
+func newDriver(db *bolt.DB) driver {
+	err := db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists(volumeBucket)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		return err
 	})
 
 	if err != nil {
@@ -456,7 +445,14 @@ func newDriver() driver {
 }
 
 func main() {
-	driver := newDriver()
+	// Open the my.db data file in your current directory.
+	// It will be created if it doesn't exist.
+	db, err := bolt.Open(socketName+".db", 0600, nil)
+	if err != nil {
+		log.Fatalf("Could not open the database: %s", err)
+	}
+
+	driver := newDriver(db)
 	handler := plugin.NewHandler(driver)
 	log.Fatal(handler.ServeUnix(socketName, 1))
 }

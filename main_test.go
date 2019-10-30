@@ -1,59 +1,100 @@
 package main
 
 import (
+	"fmt"
 	"github.com/boltdb/bolt"
 	plugin "github.com/docker/go-plugins-helpers/volume"
 	"log"
+	"os"
+	"os/exec"
 	"reflect"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-func Test_cephfsDriver_Capabilities(t *testing.T) {
-	type fields struct {
-		configPath  string
-		clientName  string
-		clusterName string
-		servers     []string
-		DB          *bolt.DB
-		RWMutex     sync.RWMutex
-	}
-	drv := fields{
-		configPath:  defaultConfigPath,
-		clientName:  defaultClientName,
-		clusterName: defaultClusterName,
-		servers:     []string{"localhost"},
-		DB:          genMockDb(),
-		RWMutex:     sync.RWMutex{},
-	}
-	defer must(drv.DB.Close)
+func Test_newDriver(t *testing.T) {
+	db := genMockDb()
+	defer must(db.Close)
+
 	tests := []struct {
-		name   string
-		fields fields
-		want   *plugin.CapabilitiesResponse
+		name string
+		envs []string
+		want *driver
 	}{
-		{"local", drv, &plugin.CapabilitiesResponse{Capabilities: plugin.Capability{Scope: "local"}}},
+		{"default", []string{}, &driver{
+			configPath:  defaultConfigPath,
+			clientName:  defaultClientName,
+			clusterName: defaultClusterName,
+			servers:     []string{"localhost"},
+			DB:          db,
+			RWMutex:     sync.RWMutex{},
+		}},
+		{"server set", []string{"SERVERS=ceph1"}, &driver{
+			configPath:  defaultConfigPath,
+			clientName:  defaultClientName,
+			clusterName: defaultClusterName,
+			servers:     []string{"ceph1"},
+			DB:          db,
+			RWMutex:     sync.RWMutex{},
+		}},
+		{"servers set", []string{"SERVERS=ceph1,ceph2,ceph3"}, &driver{
+			configPath:  defaultConfigPath,
+			clientName:  defaultClientName,
+			clusterName: defaultClusterName,
+			servers:     []string{"ceph1", "ceph2", "ceph3"},
+			DB:          db,
+			RWMutex:     sync.RWMutex{},
+		}},
 	}
+
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
-				DB:          tt.fields.DB,
-				RWMutex:     tt.fields.RWMutex,
+		func() {
+			defer os.Clearenv()
+			for _, env := range tt.envs {
+				prts := strings.SplitN(env, "=", 2)
+				if err := os.Setenv(prts[0], prts[1]); err != nil {
+					log.Fatalf("Unable to set environment variables")
+				}
 			}
-			if got := d.Capabilities(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Capabilities() = %v, want %v", got, tt.want)
+
+			got := newDriver(db)
+			if got.clusterName != tt.want.clusterName {
+				t.Errorf("newDriver().clusterName = %v, want %v", got.clusterName, tt.want.clusterName)
 			}
-		})
+
+			if got.clientName != tt.want.clientName {
+				t.Errorf("newDriver().clientName = %v, want %v", got.clientName, tt.want.clientName)
+			}
+
+			if got.configPath != tt.want.configPath {
+				t.Errorf("newDriver().configPath = %v, want %v", got.configPath, tt.want.configPath)
+			}
+
+			if !reflect.DeepEqual(got.servers, tt.want.servers) {
+				t.Errorf("newDriver().servers = %v, want %v", got.servers, tt.want.servers)
+			}
+
+			if !reflect.DeepEqual(got.DB, tt.want.DB) {
+				t.Errorf("newDriver().DB = %v, want %v", got.DB, tt.want.DB)
+			}
+		}()
 	}
 }
 
-func Test_cephfsDriver_Create(t *testing.T) {
+func TestDriver_Capabilities(t *testing.T) {
+	d := driver{}
+	got := d.Capabilities()
+	want := &plugin.CapabilitiesResponse{Capabilities: plugin.Capability{Scope: "local"}}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Capabilities() = %v, want %v", got, want)
+	}
+}
+
+func TestDriver_Create(t *testing.T) {
 	type fields struct {
 		configPath  string
 		clientName  string
@@ -86,12 +127,14 @@ func Test_cephfsDriver_Create(t *testing.T) {
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
 		{"with client_name", drv, args{&plugin.CreateRequest{Name: "test.2", Options: map[string]string{"client_name": "user"}}}, false, &volume{
 			ClientName:  "user",
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			Keyring:     "/etc/ceph/ceph.client.user.keyring",
 		}},
 		{"with mount_opts", drv, args{&plugin.CreateRequest{Name: "test.3", Options: map[string]string{"mount_opts": "name=user,secret=abc"}}}, false, &volume{
 			ClientName:  defaultClientName,
@@ -99,6 +142,7 @@ func Test_cephfsDriver_Create(t *testing.T) {
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
 		{"with remote_path", drv, args{&plugin.CreateRequest{Name: "test.4", Options: map[string]string{"remote_path": "/data/mnt"}}}, false, &volume{
 			ClientName:  defaultClientName,
@@ -106,18 +150,28 @@ func Test_cephfsDriver_Create(t *testing.T) {
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
 		{"with servers", drv, args{&plugin.CreateRequest{Name: "test.5", Options: map[string]string{"servers": "monitor1:6798,monitor2:6798"}}}, false, &volume{
 			ClientName:  defaultClientName,
 			Servers:     []string{"monitor1:6798", "monitor2:6798"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
 		{"duplicate name", drv, args{&plugin.CreateRequest{Name: "test.1"}}, false, &volume{
 			ClientName:  defaultClientName,
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
+		}},
+		{"with keyring", drv, args{&plugin.CreateRequest{Name: "test.6", Options: map[string]string{"keyring": "/etc/ceph/test.keyring"}}}, false, &volume{
+			ClientName:  defaultClientName,
+			Servers:     []string{"localhost"},
+			ClusterName: defaultClusterName,
+			ConfigPath:  defaultConfigPath,
+			Keyring:     "/etc/ceph/test.keyring",
 		}},
 	}
 	for _, tt := range tests {
@@ -145,7 +199,7 @@ func Test_cephfsDriver_Create(t *testing.T) {
 	}
 }
 
-func Test_cephfsDriver_Get(t *testing.T) {
+func TestDriver_Get(t *testing.T) {
 	type fields struct {
 		configPath  string
 		clientName  string
@@ -235,558 +289,573 @@ func Test_cephfsDriver_Get(t *testing.T) {
 	}
 }
 
-func Test_cephfsDriver_List(t *testing.T) {
-	type fields struct {
-		configPath  string
-		clientName  string
-		clusterName string
-		servers     []string
-		DB          *bolt.DB
-		RWMutex     sync.RWMutex
+func TestDriver_List(t *testing.T) {
+	db := genMockDb()
+	defer must(db.Close)
+
+	drv := driver{
+		configPath:  defaultConfigPath,
+		clientName:  defaultClientName,
+		clusterName: defaultClusterName,
+		servers:     []string{"localhost"},
+		DB:          db,
+		RWMutex:     sync.RWMutex{},
 	}
-	tests := []struct {
-		name    string
-		fields  fields
-		want    *plugin.ListResponse
-		wantErr bool
-	}{
-		// TODO: Add test cases.
+
+	vols := []volume{
+		{
+			MountPoint: "",
+			CreatedAt:  "2019-01-01T01:01:01Z",
+			Status:     nil,
+		},
+		{
+			MountPoint: "/var/www/app/data",
+			CreatedAt:  "2019-02-02T02:02:02Z",
+			Status:     nil,
+		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
-				DB:          tt.fields.DB,
-				RWMutex:     tt.fields.RWMutex,
+	_ = drv.DB.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(volumeBucket)
+		for id, v := range vols {
+			d, err := v.serialize()
+			if err != nil {
+				log.Fatalf("could not serialize volume: %s", err)
 			}
-			got, err := d.List()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("List() error = %v, wantErr %v", err, tt.wantErr)
-				return
+			err = b.Put([]byte("test."+strconv.Itoa(id+1)), d)
+			if err != nil {
+				log.Fatalf("could not insert record: %s", err)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("List() got = %v, want %v", got, tt.want)
-			}
-		})
+		}
+		return nil
+	})
+
+	got, err := drv.List()
+	if err != nil {
+		t.Errorf("List() error = %v, wanted nil", err)
+	}
+
+	want := &plugin.ListResponse{Volumes: []*plugin.Volume{{
+		Name:       "test.1",
+		Mountpoint: "",
+		CreatedAt:  "2019-01-01T01:01:01Z",
+		Status:     nil,
+	}, {
+		Name:       "test.2",
+		Mountpoint: "/var/www/app/data",
+		CreatedAt:  "2019-02-02T02:02:02Z",
+		Status:     nil,
+	}}}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("List() got = %v, want %v", got, want)
 	}
 }
 
-func Test_cephfsDriver_Mount(t *testing.T) {
-	type fields struct {
-		configPath  string
-		clientName  string
-		clusterName string
-		servers     []string
-		DB          *bolt.DB
-		RWMutex     sync.RWMutex
-	}
-	type args struct {
-		req *plugin.MountRequest
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    *plugin.MountResponse
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
-				DB:          tt.fields.DB,
-				RWMutex:     tt.fields.RWMutex,
-			}
-			got, err := d.Mount(tt.args.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Mount() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Mount() got = %v, want %v", got, tt.want)
-			}
-		})
+//func TestDriver_Mount(t *testing.T) {
+//	db := genMockDb()
+//	defer must(db.Close)
+//
+//	drv := driver{
+//		configPath:  defaultConfigPath,
+//		clientName:  defaultClientName,
+//		clusterName: defaultClusterName,
+//		servers:     []string{"localhost"},
+//		DB:          db,
+//		RWMutex:     sync.RWMutex{},
+//	}
+//
+//	vol := volume{
+//		MountPoint: "",
+//		CreatedAt:  "2019-01-01T01:01:01Z",
+//		Status:     nil,
+//	}
+//	_ = drv.DB.Update(func(tx *bolt.Tx) error {
+//		b := tx.Bucket(volumeBucket)
+//		d, err := vol.serialize()
+//		if err != nil {
+//			log.Fatalf("could not serialize volume: %s", err)
+//		}
+//		err = b.Put([]byte("test.1"), d)
+//		if err != nil {
+//			log.Fatalf("could not insert record: %s", err)
+//		}
+//		return nil
+//	})
+//
+//	execCommand = mockExecCommand("", 0)
+//	defer revertMockExecCommand()
+//
+//	got, err := drv.Mount(&plugin.MountRequest{Name: "test.1", ID: "624F80C6-F050-42BF-8B02-387AA892782F"})
+//	if err != nil {
+//		t.Errorf("Mount() error = %s, wanted nil", err)
+//		return
+//	}
+//
+//	want := &plugin.MountResponse{Mountpoint: "/var/lib/docker-volumes/624F80C6-F050-42BF-8B02-387AA892782F"}
+//	if !reflect.DeepEqual(got, want) {
+//		t.Errorf("Mount() got = %v, want %v", got, want)
+//	}
+//}
+
+//func TestDriver_Path(t *testing.T) {
+//	type fields struct {
+//		configPath  string
+//		clientName  string
+//		clusterName string
+//		servers     []string
+//		DB          *bolt.DB
+//		RWMutex     sync.RWMutex
+//	}
+//	type args struct {
+//		req *plugin.PathRequest
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		args    args
+//		want    *plugin.PathResponse
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			d := driver{
+//				configPath:  tt.fields.configPath,
+//				clientName:  tt.fields.clientName,
+//				clusterName: tt.fields.clusterName,
+//				servers:     tt.fields.servers,
+//				DB:          tt.fields.DB,
+//				RWMutex:     tt.fields.RWMutex,
+//			}
+//			got, err := d.Path(tt.args.req)
+//			if (err != nil) != tt.wantErr {
+//				t.Errorf("Path() error = %v, wantErr %v", err, tt.wantErr)
+//				return
+//			}
+//			if !reflect.DeepEqual(got, tt.want) {
+//				t.Errorf("Path() got = %v, want %v", got, tt.want)
+//			}
+//		})
+//	}
+//}
+//
+//func TestDriver_Remove(t *testing.T) {
+//	type fields struct {
+//		configPath  string
+//		clientName  string
+//		clusterName string
+//		servers     []string
+//		DB          *bolt.DB
+//		RWMutex     sync.RWMutex
+//	}
+//	type args struct {
+//		req *plugin.RemoveRequest
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		args    args
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			d := driver{
+//				configPath:  tt.fields.configPath,
+//				clientName:  tt.fields.clientName,
+//				clusterName: tt.fields.clusterName,
+//				servers:     tt.fields.servers,
+//				DB:          tt.fields.DB,
+//				RWMutex:     tt.fields.RWMutex,
+//			}
+//			if err := d.Remove(tt.args.req); (err != nil) != tt.wantErr {
+//				t.Errorf("Remove() error = %v, wantErr %v", err, tt.wantErr)
+//			}
+//		})
+//	}
+//}
+//
+//func TestDriver_Unmount(t *testing.T) {
+//	type fields struct {
+//		configPath  string
+//		clientName  string
+//		clusterName string
+//		servers     []string
+//		DB          *bolt.DB
+//		RWMutex     sync.RWMutex
+//	}
+//	type args struct {
+//		req *plugin.UnmountRequest
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		args    args
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			d := driver{
+//				configPath:  tt.fields.configPath,
+//				clientName:  tt.fields.clientName,
+//				clusterName: tt.fields.clusterName,
+//				servers:     tt.fields.servers,
+//				DB:          tt.fields.DB,
+//				RWMutex:     tt.fields.RWMutex,
+//			}
+//			if err := d.Unmount(tt.args.req); (err != nil) != tt.wantErr {
+//				t.Errorf("Unmount() error = %v, wantErr %v", err, tt.wantErr)
+//			}
+//		})
+//	}
+//}
+//
+//func TestDriver_fetchVol(t *testing.T) {
+//	type fields struct {
+//		configPath  string
+//		clientName  string
+//		clusterName string
+//		servers     []string
+//		DB          *bolt.DB
+//		RWMutex     sync.RWMutex
+//	}
+//	type args struct {
+//		name string
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		args    args
+//		want    *volume
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			d := driver{
+//				configPath:  tt.fields.configPath,
+//				clientName:  tt.fields.clientName,
+//				clusterName: tt.fields.clusterName,
+//				servers:     tt.fields.servers,
+//				DB:          tt.fields.DB,
+//				RWMutex:     tt.fields.RWMutex,
+//			}
+//			got, err := d.fetchVol(tt.args.name)
+//			if (err != nil) != tt.wantErr {
+//				t.Errorf("fetchVol() error = %v, wantErr %v", err, tt.wantErr)
+//				return
+//			}
+//			if !reflect.DeepEqual(got, tt.want) {
+//				t.Errorf("fetchVol() got = %v, want %v", got, tt.want)
+//			}
+//		})
+//	}
+//}
+//
+//func TestDriver_saveVol(t *testing.T) {
+//	type fields struct {
+//		configPath  string
+//		clientName  string
+//		clusterName string
+//		servers     []string
+//		DB          *bolt.DB
+//		RWMutex     sync.RWMutex
+//	}
+//	type args struct {
+//		name string
+//		vol  volume
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		args    args
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			d := driver{
+//				configPath:  tt.fields.configPath,
+//				clientName:  tt.fields.clientName,
+//				clusterName: tt.fields.clusterName,
+//				servers:     tt.fields.servers,
+//				DB:          tt.fields.DB,
+//				RWMutex:     tt.fields.RWMutex,
+//			}
+//			if err := d.saveVol(tt.args.name, tt.args.vol); (err != nil) != tt.wantErr {
+//				t.Errorf("saveVol() error = %v, wantErr %v", err, tt.wantErr)
+//			}
+//		})
+//	}
+//}
+//
+//func TestCephfsVolume_mount(t *testing.T) {
+//	type fields struct {
+//		ClientName  string
+//		MountPoint  string
+//		CreatedAt   string
+//		Status      map[string]interface{}
+//		MountOpts   string
+//		RemotePath  string
+//		Servers     []string
+//		ClusterName string
+//		ConfigPath  string
+//	}
+//	type args struct {
+//		mnt string
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		args    args
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			v := &volume{
+//				ClientName:  tt.fields.ClientName,
+//				MountPoint:  tt.fields.MountPoint,
+//				CreatedAt:   tt.fields.CreatedAt,
+//				Status:      tt.fields.Status,
+//				MountOpts:   tt.fields.MountOpts,
+//				RemotePath:  tt.fields.RemotePath,
+//				Servers:     tt.fields.Servers,
+//				ClusterName: tt.fields.ClusterName,
+//				ConfigPath:  tt.fields.ConfigPath,
+//			}
+//			if err := v.mount(tt.args.mnt); (err != nil) != tt.wantErr {
+//				t.Errorf("mount() error = %v, wantErr %v", err, tt.wantErr)
+//			}
+//		})
+//	}
+//}
+//
+//func TestCephfsVolume_secret(t *testing.T) {
+//	type fields struct {
+//		ClientName  string
+//		MountPoint  string
+//		CreatedAt   string
+//		Status      map[string]interface{}
+//		MountOpts   string
+//		RemotePath  string
+//		Servers     []string
+//		ClusterName string
+//		ConfigPath  string
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		want    string
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			v := volume{
+//				ClientName:  tt.fields.ClientName,
+//				MountPoint:  tt.fields.MountPoint,
+//				CreatedAt:   tt.fields.CreatedAt,
+//				Status:      tt.fields.Status,
+//				MountOpts:   tt.fields.MountOpts,
+//				RemotePath:  tt.fields.RemotePath,
+//				Servers:     tt.fields.Servers,
+//				ClusterName: tt.fields.ClusterName,
+//				ConfigPath:  tt.fields.ConfigPath,
+//			}
+//			got, err := v.secret()
+//			if (err != nil) != tt.wantErr {
+//				t.Errorf("secret() error = %v, wantErr %v", err, tt.wantErr)
+//				return
+//			}
+//			if got != tt.want {
+//				t.Errorf("secret() got = %v, want %v", got, tt.want)
+//			}
+//		})
+//	}
+//}
+//
+//func TestCephfsVolume_serialize(t *testing.T) {
+//	type fields struct {
+//		ClientName  string
+//		MountPoint  string
+//		CreatedAt   string
+//		Status      map[string]interface{}
+//		MountOpts   string
+//		RemotePath  string
+//		Servers     []string
+//		ClusterName string
+//		ConfigPath  string
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		want    []byte
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			v := volume{
+//				ClientName:  tt.fields.ClientName,
+//				MountPoint:  tt.fields.MountPoint,
+//				CreatedAt:   tt.fields.CreatedAt,
+//				Status:      tt.fields.Status,
+//				MountOpts:   tt.fields.MountOpts,
+//				RemotePath:  tt.fields.RemotePath,
+//				Servers:     tt.fields.Servers,
+//				ClusterName: tt.fields.ClusterName,
+//				ConfigPath:  tt.fields.ConfigPath,
+//			}
+//			got, err := v.serialize()
+//			if (err != nil) != tt.wantErr {
+//				t.Errorf("serialize() error = %v, wantErr %v", err, tt.wantErr)
+//				return
+//			}
+//			if !reflect.DeepEqual(got, tt.want) {
+//				t.Errorf("serialize() got = %v, want %v", got, tt.want)
+//			}
+//		})
+//	}
+//}
+//
+//func TestCephfsVolume_unmount(t *testing.T) {
+//	type fields struct {
+//		ClientName  string
+//		MountPoint  string
+//		CreatedAt   string
+//		Status      map[string]interface{}
+//		MountOpts   string
+//		RemotePath  string
+//		Servers     []string
+//		ClusterName string
+//		ConfigPath  string
+//	}
+//	tests := []struct {
+//		name    string
+//		fields  fields
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			v := volume{
+//				ClientName:  tt.fields.ClientName,
+//				MountPoint:  tt.fields.MountPoint,
+//				CreatedAt:   tt.fields.CreatedAt,
+//				Status:      tt.fields.Status,
+//				MountOpts:   tt.fields.MountOpts,
+//				RemotePath:  tt.fields.RemotePath,
+//				Servers:     tt.fields.Servers,
+//				ClusterName: tt.fields.ClusterName,
+//				ConfigPath:  tt.fields.ConfigPath,
+//			}
+//			if err := v.unmount(); (err != nil) != tt.wantErr {
+//				t.Errorf("unmount() error = %v, wantErr %v", err, tt.wantErr)
+//			}
+//		})
+//	}
+//}
+//
+//func TestEnvOrDefault(t *testing.T) {
+//	type args struct {
+//		param string
+//		def   string
+//	}
+//	tests := []struct {
+//		name string
+//		args args
+//		want string
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			if got := envOrDefault(tt.args.param, tt.args.def); got != tt.want {
+//				t.Errorf("envOrDefault() = %v, want %v", got, tt.want)
+//			}
+//		})
+//	}
+//}
+//
+//func TestNewCephFsDriver(t *testing.T) {
+//	tests := []struct {
+//		name string
+//		want driver
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			if got := newDriver(); !reflect.DeepEqual(got, tt.want) {
+//				t.Errorf("newDriver() = %v, want %v", got, tt.want)
+//			}
+//		})
+//	}
+//}
+//
+//func TestUnserialize(t *testing.T) {
+//	type args struct {
+//		in []byte
+//	}
+//	tests := []struct {
+//		name    string
+//		args    args
+//		want    *volume
+//		wantErr bool
+//	}{
+//		// TODO: Add test cases.
+//	}
+//	for _, tt := range tests {
+//		t.Run(tt.name, func(t *testing.T) {
+//			got, err := unserialize(tt.args.in)
+//			if (err != nil) != tt.wantErr {
+//				t.Errorf("unserialize() error = %v, wantErr %v", err, tt.wantErr)
+//				return
+//			}
+//			if !reflect.DeepEqual(got, tt.want) {
+//				t.Errorf("unserialize() got = %v, want %v", got, tt.want)
+//			}
+//		})
+//	}
+//}
+
+func mockExecCommand(out string, exit int) func(string, ...string) *exec.Cmd {
+	return func(command string, args ...string) *exec.Cmd {
+		cs := []string{"-test.run=TestExecCommandHelper", "--", command}
+		cs = append(cs, args...)
+		cmd := exec.Command(os.Args[0], cs...)
+		cmd.Env = []string{
+			"GO_WANT_HELPER_PROCESS=1",
+			"GO_HELPER_OUTPUT=\"" + out + "\"",
+			"GO_HELPER_EXIT=" + strconv.Itoa(exit),
+		}
+		return cmd
 	}
 }
 
-func Test_cephfsDriver_Path(t *testing.T) {
-	type fields struct {
-		configPath  string
-		clientName  string
-		clusterName string
-		servers     []string
-		DB          *bolt.DB
-		RWMutex     sync.RWMutex
-	}
-	type args struct {
-		req *plugin.PathRequest
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    *plugin.PathResponse
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
-				DB:          tt.fields.DB,
-				RWMutex:     tt.fields.RWMutex,
-			}
-			got, err := d.Path(tt.args.req)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Path() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Path() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
+func revertMockExecCommand() {
+	execCommand = exec.Command
 }
 
-func Test_cephfsDriver_Remove(t *testing.T) {
-	type fields struct {
-		configPath  string
-		clientName  string
-		clusterName string
-		servers     []string
-		DB          *bolt.DB
-		RWMutex     sync.RWMutex
+func TestExecCommandHelper(t *testing.T) {
+	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
+		return
 	}
-	type args struct {
-		req *plugin.RemoveRequest
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
-				DB:          tt.fields.DB,
-				RWMutex:     tt.fields.RWMutex,
-			}
-			if err := d.Remove(tt.args.req); (err != nil) != tt.wantErr {
-				t.Errorf("Remove() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
 
-func Test_cephfsDriver_Unmount(t *testing.T) {
-	type fields struct {
-		configPath  string
-		clientName  string
-		clusterName string
-		servers     []string
-		DB          *bolt.DB
-		RWMutex     sync.RWMutex
-	}
-	type args struct {
-		req *plugin.UnmountRequest
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
-				DB:          tt.fields.DB,
-				RWMutex:     tt.fields.RWMutex,
-			}
-			if err := d.Unmount(tt.args.req); (err != nil) != tt.wantErr {
-				t.Errorf("Unmount() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func Test_cephfsDriver_fetchVol(t *testing.T) {
-	type fields struct {
-		configPath  string
-		clientName  string
-		clusterName string
-		servers     []string
-		DB          *bolt.DB
-		RWMutex     sync.RWMutex
-	}
-	type args struct {
-		name string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		want    *volume
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
-				DB:          tt.fields.DB,
-				RWMutex:     tt.fields.RWMutex,
-			}
-			got, err := d.fetchVol(tt.args.name)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("fetchVol() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("fetchVol() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_cephfsDriver_saveVol(t *testing.T) {
-	type fields struct {
-		configPath  string
-		clientName  string
-		clusterName string
-		servers     []string
-		DB          *bolt.DB
-		RWMutex     sync.RWMutex
-	}
-	type args struct {
-		name string
-		vol  volume
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
-				DB:          tt.fields.DB,
-				RWMutex:     tt.fields.RWMutex,
-			}
-			if err := d.saveVol(tt.args.name, tt.args.vol); (err != nil) != tt.wantErr {
-				t.Errorf("saveVol() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func Test_cephfsVolume_connection(t *testing.T) {
-	type fields struct {
-		ClientName  string
-		MountPoint  string
-		CreatedAt   string
-		Status      map[string]interface{}
-		MountOpts   string
-		RemotePath  string
-		Servers     []string
-		ClusterName string
-		ConfigPath  string
-	}
-	tests := []struct {
-		name   string
-		fields fields
-		want   string
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			v := volume{
-				ClientName:  tt.fields.ClientName,
-				MountPoint:  tt.fields.MountPoint,
-				CreatedAt:   tt.fields.CreatedAt,
-				Status:      tt.fields.Status,
-				MountOpts:   tt.fields.MountOpts,
-				RemotePath:  tt.fields.RemotePath,
-				Servers:     tt.fields.Servers,
-				ClusterName: tt.fields.ClusterName,
-				ConfigPath:  tt.fields.ConfigPath,
-			}
-			if got := v.connection(); got != tt.want {
-				t.Errorf("connection() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_cephfsVolume_mount(t *testing.T) {
-	type fields struct {
-		ClientName  string
-		MountPoint  string
-		CreatedAt   string
-		Status      map[string]interface{}
-		MountOpts   string
-		RemotePath  string
-		Servers     []string
-		ClusterName string
-		ConfigPath  string
-	}
-	type args struct {
-		mnt string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		args    args
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			v := &volume{
-				ClientName:  tt.fields.ClientName,
-				MountPoint:  tt.fields.MountPoint,
-				CreatedAt:   tt.fields.CreatedAt,
-				Status:      tt.fields.Status,
-				MountOpts:   tt.fields.MountOpts,
-				RemotePath:  tt.fields.RemotePath,
-				Servers:     tt.fields.Servers,
-				ClusterName: tt.fields.ClusterName,
-				ConfigPath:  tt.fields.ConfigPath,
-			}
-			if err := v.mount(tt.args.mnt); (err != nil) != tt.wantErr {
-				t.Errorf("mount() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func Test_cephfsVolume_secret(t *testing.T) {
-	type fields struct {
-		ClientName  string
-		MountPoint  string
-		CreatedAt   string
-		Status      map[string]interface{}
-		MountOpts   string
-		RemotePath  string
-		Servers     []string
-		ClusterName string
-		ConfigPath  string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		want    string
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			v := volume{
-				ClientName:  tt.fields.ClientName,
-				MountPoint:  tt.fields.MountPoint,
-				CreatedAt:   tt.fields.CreatedAt,
-				Status:      tt.fields.Status,
-				MountOpts:   tt.fields.MountOpts,
-				RemotePath:  tt.fields.RemotePath,
-				Servers:     tt.fields.Servers,
-				ClusterName: tt.fields.ClusterName,
-				ConfigPath:  tt.fields.ConfigPath,
-			}
-			got, err := v.secret()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("secret() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if got != tt.want {
-				t.Errorf("secret() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_cephfsVolume_serialize(t *testing.T) {
-	type fields struct {
-		ClientName  string
-		MountPoint  string
-		CreatedAt   string
-		Status      map[string]interface{}
-		MountOpts   string
-		RemotePath  string
-		Servers     []string
-		ClusterName string
-		ConfigPath  string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		want    []byte
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			v := volume{
-				ClientName:  tt.fields.ClientName,
-				MountPoint:  tt.fields.MountPoint,
-				CreatedAt:   tt.fields.CreatedAt,
-				Status:      tt.fields.Status,
-				MountOpts:   tt.fields.MountOpts,
-				RemotePath:  tt.fields.RemotePath,
-				Servers:     tt.fields.Servers,
-				ClusterName: tt.fields.ClusterName,
-				ConfigPath:  tt.fields.ConfigPath,
-			}
-			got, err := v.serialize()
-			if (err != nil) != tt.wantErr {
-				t.Errorf("serialize() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("serialize() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_cephfsVolume_unmount(t *testing.T) {
-	type fields struct {
-		ClientName  string
-		MountPoint  string
-		CreatedAt   string
-		Status      map[string]interface{}
-		MountOpts   string
-		RemotePath  string
-		Servers     []string
-		ClusterName string
-		ConfigPath  string
-	}
-	tests := []struct {
-		name    string
-		fields  fields
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			v := volume{
-				ClientName:  tt.fields.ClientName,
-				MountPoint:  tt.fields.MountPoint,
-				CreatedAt:   tt.fields.CreatedAt,
-				Status:      tt.fields.Status,
-				MountOpts:   tt.fields.MountOpts,
-				RemotePath:  tt.fields.RemotePath,
-				Servers:     tt.fields.Servers,
-				ClusterName: tt.fields.ClusterName,
-				ConfigPath:  tt.fields.ConfigPath,
-			}
-			if err := v.unmount(); (err != nil) != tt.wantErr {
-				t.Errorf("unmount() error = %v, wantErr %v", err, tt.wantErr)
-			}
-		})
-	}
-}
-
-func Test_envOrDefault(t *testing.T) {
-	type args struct {
-		param string
-		def   string
-	}
-	tests := []struct {
-		name string
-		args args
-		want string
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := envOrDefault(tt.args.param, tt.args.def); got != tt.want {
-				t.Errorf("envOrDefault() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_newCephFsDriver(t *testing.T) {
-	tests := []struct {
-		name string
-		want driver
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := newDriver(); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("newDriver() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
-func Test_unserialize(t *testing.T) {
-	type args struct {
-		in []byte
-	}
-	tests := []struct {
-		name    string
-		args    args
-		want    *volume
-		wantErr bool
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := unserialize(tt.args.in)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("unserialize() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("unserialize() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
+	ec, _ := strconv.Atoi(os.Getenv("GO_HELPER_EXIT"))
+	_, _ = fmt.Fprintf(os.Stdout, os.Getenv("GO_HELPER_OUTPUT"))
+	os.Exit(ec)
 }
 
 func volCompare(want, got *volume) bool {
