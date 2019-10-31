@@ -424,14 +424,16 @@ func TestDriver_Remove(t *testing.T) {
 
 	vols := []volume{
 		{
-			MountPoint: "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913",
-			CreatedAt:  "2019-01-01T01:01:01Z",
-			Status:     nil,
+			MountPoint:  "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913",
+			CreatedAt:   "2019-01-01T01:01:01Z",
+			Status:      nil,
+			Connections: 1,
 		},
 		{
-			MountPoint: "",
-			CreatedAt:  "2019-02-02T02:02:02Z",
-			Status:     nil,
+			MountPoint:  "",
+			CreatedAt:   "2019-02-02T02:02:02Z",
+			Status:      nil,
+			Connections: 0,
 		},
 	}
 	must(func() error { return prepareMockData(db, vols) })

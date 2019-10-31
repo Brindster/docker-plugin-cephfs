@@ -29,6 +29,8 @@ type volume struct {
 	ClusterName string
 	ConfigPath  string
 	Keyring     string
+
+	Connections int
 }
 
 type driver struct {
@@ -74,6 +76,7 @@ func (d driver) Create(req *plugin.CreateRequest) error {
 		ClusterName: d.clusterName,
 		ConfigPath:  d.configPath,
 		Keyring:     fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.configPath, "/"), d.clusterName, d.clientName),
+		Connections: 0,
 	}
 
 	for key, val := range req.Options {
@@ -166,7 +169,7 @@ func (d driver) Remove(req *plugin.RemoveRequest) error {
 		return fmt.Errorf("could not read from db: %s", err)
 	}
 
-	if vol.MountPoint != "" {
+	if vol.Connections > 0 {
 		return fmt.Errorf("volume is still mounted")
 	}
 
@@ -282,6 +285,11 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 	var mountPoint string
 	var err error
 
+	if v.Connections > 0 {
+		v.Connections++
+		return nil
+	}
+
 	if v.RemotePath != "" && v.RemotePath != "/" {
 		mountPoint, err = ioutil.TempDir("", "docker-plugin-cephfs_mnt_")
 		if err != nil {
@@ -339,6 +347,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 		}
 	}
 
+	v.Connections++
 	v.MountPoint = mountPoint
 	return nil
 }
@@ -348,12 +357,17 @@ func (d driver) unmountVolume(v *volume) error {
 		return fmt.Errorf("volume is not mounted")
 	}
 
-	err := d.mnt.Unmount(v.MountPoint)
-	if err != nil {
-		return fmt.Errorf("failed unmounting volume: %s", err)
+	v.Connections--
+	if v.Connections <= 0 {
+		err := d.mnt.Unmount(v.MountPoint)
+		if err != nil {
+			return fmt.Errorf("failed unmounting volume: %s", err)
+		}
+
+		v.MountPoint = ""
+		v.Connections = 0
 	}
 
-	v.MountPoint = ""
 	return nil
 }
 
