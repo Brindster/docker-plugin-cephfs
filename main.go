@@ -39,6 +39,7 @@ type driver struct {
 	clusterName string
 	servers     []string
 	mnt         mounter
+	dir         directoryMaker
 	*bolt.DB
 	sync.RWMutex
 }
@@ -49,6 +50,26 @@ type mounter interface {
 }
 
 type fsMounter struct{}
+
+type directoryMaker interface {
+	IsDir(dir string) bool
+	MakeDir(dir string, mode os.FileMode) error
+}
+
+type osDirectoryMaker struct{}
+
+func (o osDirectoryMaker) IsDir(dir string) bool {
+	stat, err := os.Stat(dir)
+	if err != nil {
+		return false
+	}
+
+	return stat.IsDir()
+}
+
+func (o osDirectoryMaker) MakeDir(dir string, mode os.FileMode) error {
+	return os.MkdirAll(dir, mode)
+}
 
 const (
 	defaultConfigPath  = "/etc/ceph/"
@@ -297,7 +318,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 		}
 	} else {
 		mountPoint = path.Join(mountDir, mnt)
-		if err := os.MkdirAll(mountPoint, 0755); err != nil {
+		if err := d.dir.MakeDir(mountPoint, 0755); err != nil {
 			return fmt.Errorf("error creating mountpoint %s: %s", mountPoint, err)
 		}
 	}
@@ -319,21 +340,11 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 
 	if v.RemotePath != "" && v.RemotePath != "/" {
 		desiredMount := path.Join(mountPoint, v.RemotePath)
-		stat, err := os.Stat(desiredMount)
-		if !os.IsNotExist(err) {
-			if err = d.mnt.Unmount(mountPoint); err != nil {
-				return fmt.Errorf("failed unmounting volume: %s", err)
+
+		if !d.dir.IsDir(desiredMount) {
+			if err := d.dir.MakeDir(desiredMount, 0755); err != nil {
+				return fmt.Errorf("unable to make remote mount: %s", err)
 			}
-
-			if !stat.IsDir() {
-				return fmt.Errorf("remote mount is a file")
-			}
-
-			return nil
-		}
-
-		if err = os.MkdirAll(desiredMount, 0755); err != nil {
-			return fmt.Errorf("unable to make remote mount: %s", err)
 		}
 
 		if err = d.mnt.Unmount(mountPoint); err != nil {
@@ -462,6 +473,7 @@ func newDriver(db *bolt.DB) driver {
 		clusterName: envOrDefault("CLUSTER_NAME", defaultClusterName),
 		servers:     servers,
 		mnt:         fsMounter{},
+		dir:         osDirectoryMaker{},
 		DB:          db,
 	}
 	return driver

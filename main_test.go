@@ -183,7 +183,7 @@ func TestDriver_Create(t *testing.T) {
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
 				servers:     tt.fields.servers,
-				mnt:         mockMounter{},
+				mnt:         &mockMounter{},
 				DB:          tt.fields.DB,
 				RWMutex:     tt.fields.RWMutex,
 			}
@@ -267,7 +267,7 @@ func TestDriver_Get(t *testing.T) {
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
 				servers:     tt.fields.servers,
-				mnt:         mockMounter{},
+				mnt:         &mockMounter{},
 				DB:          tt.fields.DB,
 				RWMutex:     tt.fields.RWMutex,
 			}
@@ -292,7 +292,7 @@ func TestDriver_List(t *testing.T) {
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
 		servers:     []string{"localhost"},
-		mnt:         mockMounter{},
+		mnt:         &mockMounter{},
 		DB:          db,
 		RWMutex:     sync.RWMutex{},
 	}
@@ -342,7 +342,8 @@ func TestDriver_Mount(t *testing.T) {
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
 		servers:     []string{"localhost"},
-		mnt:         mockMounter{},
+		mnt:         &mockMounter{},
+		dir:         &osDirectoryMaker{},
 		DB:          db,
 		RWMutex:     sync.RWMutex{},
 	}
@@ -407,7 +408,7 @@ func TestDriver_Path(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{mnt: mockMounter{}, DB: db}
+			d := driver{mnt: &mockMounter{}, DB: db}
 			got, err := d.Path(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Path() error = %v, wantErr %v", err, tt.wantErr)
@@ -454,7 +455,7 @@ func TestDriver_Remove(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{mnt: mockMounter{}, DB: db}
+			d := driver{mnt: &mockMounter{}, DB: db}
 			err := d.Remove(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Remove() error = %v, wantErr %v", err, tt.wantErr)
@@ -516,7 +517,7 @@ func TestDriver_Unmount(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{mnt: mockMounter{UnmountResponse: tt.umntResp}, DB: db}
+			d := driver{mnt: &mockMounter{UnmountResponse: tt.umntResp}, DB: db}
 			err := d.Unmount(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Unmount() error = %v, wantErr %v", err, tt.wantErr)
@@ -548,17 +549,45 @@ func TestDriver_Unmount(t *testing.T) {
 	}
 }
 
+
+type call struct {
+	method string
+	args   []interface{}
+}
+
 type mockMounter struct {
 	MountResponse   error
 	UnmountResponse error
 }
 
-func (m mockMounter) Mount(source string, target string, fstype string, data string) error {
+func (m *mockMounter) Mount(source string, target string, fstype string, data string) error {
+	m.calls = append(m.calls, call{"Mount", []interface{}{source, target, fstype, data}})
 	return m.MountResponse
 }
 
-func (m mockMounter) Unmount(target string) error {
+func (m *mockMounter) Unmount(target string) error {
+	m.calls = append(m.calls, call{"Unmount", []interface{}{target}})
 	return m.UnmountResponse
+}
+
+func (m mockMounter) receivedCall(method string) bool {
+	for _, call := range m.calls {
+		if method == call.method {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m mockMounter) receivedCallWithArgs(method string, args ...string) bool {
+	for _, call := range m.calls {
+		if method == call.method && reflect.DeepEqual(args, call.args) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func genMockDb() *bolt.DB {
