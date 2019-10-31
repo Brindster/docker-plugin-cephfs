@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/gob"
 	"fmt"
 	"log"
 	"os"
@@ -274,7 +272,7 @@ func (d driver) fetchVol(name string) (*volume, error) {
 }
 
 func (d driver) saveVol(name string, vol volume) error {
-	enc, err := vol.serialize()
+	enc, err := serialize(vol)
 	if err != nil {
 		return fmt.Errorf("could not serialize volume: %s", err)
 	}
@@ -386,30 +384,6 @@ func (v volume) secret() (string, error) {
 	}
 
 	return sec.Key("key").String(), nil
-}
-
-func (v volume) serialize() ([]byte, error) {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	if err := enc.Encode(v); err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
-}
-
-func unserialize(in []byte) (*volume, error) {
-	var buf bytes.Buffer
-
-	buf.Write(in)
-
-	out := &volume{}
-	dec := gob.NewDecoder(&buf)
-	if err := dec.Decode(out); err != nil {
-		return nil, err
-	}
-
-	return out, nil
 }
 
 func newDriver(db *bolt.DB) driver {

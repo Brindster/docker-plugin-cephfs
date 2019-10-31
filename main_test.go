@@ -887,7 +887,7 @@ func prepareMockData(db *bolt.DB, vols []volume) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(volumeBucket)
 		for id, v := range vols {
-			d, err := v.serialize()
+			d, err := serialize(v)
 			if err != nil {
 				return fmt.Errorf("could not serialize volume: %s", err)
 			}
