@@ -1,4 +1,4 @@
-package main
+package volume
 
 import (
 	"fmt"
@@ -61,8 +61,8 @@ const (
 )
 
 var (
-	socketName   = "cephfs"
-	volumeBucket = []byte("volumes")
+	socketName = "cephfs"
+	bucket     = []byte("volumes")
 )
 
 // Create will create a new volume
@@ -116,7 +116,7 @@ func (d Driver) List() (*plugin.ListResponse, error) {
 	vols = make([]*plugin.Volume, 0)
 
 	err := d.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
+		b := tx.Bucket(bucket)
 		return b.ForEach(func(k, v []byte) error {
 			vol, err := unserialize(v)
 			if err != nil {
@@ -178,7 +178,7 @@ func (d Driver) Remove(req *plugin.RemoveRequest) error {
 	}
 
 	err = d.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
+		b := tx.Bucket(bucket)
 		return b.Delete([]byte(req.Name))
 	})
 
@@ -258,7 +258,7 @@ func (d Driver) Capabilities() *plugin.CapabilitiesResponse {
 func (d Driver) fetchVol(name string) (*Volume, error) {
 	var vol *Volume
 	err := d.View(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
+		b := tx.Bucket(bucket)
 		v := b.Get([]byte(name))
 
 		if v == nil {
@@ -280,7 +280,7 @@ func (d Driver) saveVol(name string, vol Volume) error {
 	}
 
 	return d.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
+		b := tx.Bucket(bucket)
 		return b.Put([]byte(name), enc)
 	})
 }
@@ -401,7 +401,7 @@ func (d Driver) secret(v Volume) (string, error) {
 
 func NewDriver(db *bolt.DB) Driver {
 	err := db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(volumeBucket)
+		_, err := tx.CreateBucketIfNotExists(bucket)
 		return err
 	})
 

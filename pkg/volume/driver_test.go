@@ -1,4 +1,4 @@
-package main
+package volume
 
 import (
 	"errors"
@@ -315,7 +315,7 @@ func TestDriver_List(t *testing.T) {
 			Status:     nil,
 		},
 	}
-	must(func() error { return prepareMockData(drv.DB, vols) })
+	must(func() error { return prepareMockData(db, vols) })
 
 	got, err := drv.List()
 	if err != nil {
@@ -368,7 +368,7 @@ func TestDriver_Mount(t *testing.T) {
 		ClientName: "admin",
 		Keyring:    keyring,
 	}
-	must(func() error { return prepareMockData(drv.DB, []Volume{vol}) })
+	must(func() error { return prepareMockData(db, []Volume{vol}) })
 
 	got, err := drv.Mount(&plugin.MountRequest{Name: "test.1", ID: "624F80C6-F050-42BF-8B02-387AA892782F"})
 	if err != nil {
@@ -469,7 +469,7 @@ func TestDriver_Remove(t *testing.T) {
 			}
 			if err == nil {
 				_ = db.View(func(tx *bolt.Tx) error {
-					b := tx.Bucket(volumeBucket)
+					b := tx.Bucket(bucket)
 					d := b.Get([]byte(tt.args.req.Name))
 					if d != nil {
 						t.Errorf("Remove() did not delete volume")
@@ -532,7 +532,7 @@ func TestDriver_Unmount(t *testing.T) {
 
 			if err != nil && !tt.wantErr {
 				_ = db.View(func(tx *bolt.Tx) error {
-					b := tx.Bucket(volumeBucket)
+					b := tx.Bucket(bucket)
 					data := b.Get([]byte(tt.args.req.Name))
 					if data == nil {
 						t.Errorf("Unmount() volume is removed")
@@ -887,8 +887,8 @@ func genMockDb() *bolt.DB {
 	}
 
 	if err = db.Update(func(tx *bolt.Tx) error {
-		_ = tx.DeleteBucket(volumeBucket)
-		_, err := tx.CreateBucket(volumeBucket)
+		_ = tx.DeleteBucket(bucket)
+		_, err := tx.CreateBucket(bucket)
 		if err != nil {
 			return err
 		}
@@ -903,7 +903,7 @@ func genMockDb() *bolt.DB {
 
 func prepareMockData(db *bolt.DB, vols []Volume) error {
 	return db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
+		b := tx.Bucket(bucket)
 		for id, v := range vols {
 			d, err := serialize(v)
 			if err != nil {
