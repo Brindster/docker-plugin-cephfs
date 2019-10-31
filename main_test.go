@@ -183,6 +183,7 @@ func TestDriver_Create(t *testing.T) {
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
 				servers:     tt.fields.servers,
+				mnt:         mockMounter{},
 				DB:          tt.fields.DB,
 				RWMutex:     tt.fields.RWMutex,
 			}
@@ -276,6 +277,7 @@ func TestDriver_Get(t *testing.T) {
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
 				servers:     tt.fields.servers,
+				mnt:         mockMounter{},
 				DB:          tt.fields.DB,
 				RWMutex:     tt.fields.RWMutex,
 			}
@@ -300,6 +302,7 @@ func TestDriver_List(t *testing.T) {
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
 		servers:     []string{"localhost"},
+		mnt:         mockMounter{},
 		DB:          db,
 		RWMutex:     sync.RWMutex{},
 	}
@@ -362,6 +365,7 @@ func TestDriver_Mount(t *testing.T) {
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
 		servers:     []string{"localhost"},
+		mnt:         mockMounter{},
 		DB:          db,
 		RWMutex:     sync.RWMutex{},
 	}
@@ -390,8 +394,6 @@ func TestDriver_Mount(t *testing.T) {
 		return nil
 	})
 
-	execCommand = mockExecCommand("", 0)
-	defer revertMockExecCommand()
 	mountDir = path.Join(os.TempDir(), "docker-plugin-cephfs_test_mnt")
 	defer func() { mountDir = plugin.DefaultDockerRootDirectory }()
 
@@ -452,7 +454,7 @@ func TestDriver_Path(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{DB: db}
+			d := driver{mnt: mockMounter{}, DB: db}
 			got, err := d.Path(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Path() error = %v, wantErr %v", err, tt.wantErr)
@@ -510,7 +512,7 @@ func TestDriver_Remove(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{DB: db}
+			d := driver{mnt: mockMounter{}, DB: db}
 			err := d.Remove(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Remove() error = %v, wantErr %v", err, tt.wantErr)
@@ -883,6 +885,19 @@ func TestDriver_Remove(t *testing.T) {
 //		})
 //	}
 //}
+
+type mockMounter struct {
+	MountResponse   error
+	UnmountResponse error
+}
+
+func (m mockMounter) Mount(source string, target string, fstype string, data string) error {
+	return m.MountResponse
+}
+
+func (m mockMounter) Unmount(target string) error {
+	return m.UnmountResponse
+}
 
 func mockExecCommand(out string, exit int) func(string, ...string) *exec.Cmd {
 	return func(command string, args ...string) *exec.Cmd {

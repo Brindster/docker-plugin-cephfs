@@ -11,7 +11,6 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/boltdb/bolt"
@@ -38,9 +37,17 @@ type driver struct {
 	clientName  string
 	clusterName string
 	servers     []string
+	mnt         mounter
 	*bolt.DB
 	sync.RWMutex
 }
+
+type mounter interface {
+	Mount(source string, target string, fstype string, data string) error
+	Unmount(target string) error
+}
+
+type fsMounter struct{}
 
 const (
 	defaultConfigPath  = "/etc/ceph/"
@@ -200,7 +207,7 @@ func (d driver) Mount(req *plugin.MountRequest) (*plugin.MountResponse, error) {
 		return nil, fmt.Errorf("could not read from db: %s", err)
 	}
 
-	if err = vol.mount(req.ID); err != nil {
+	if err = d.mountVolume(vol, req.ID); err != nil {
 		return nil, fmt.Errorf("could not mount the vol: %s", err)
 	}
 
@@ -223,7 +230,7 @@ func (d driver) Unmount(req *plugin.UnmountRequest) error {
 		return fmt.Errorf("could not read from db: %s", err)
 	}
 
-	if err = vol.unmount(); err != nil {
+	if err = d.unmountVolume(vol); err != nil {
 		return fmt.Errorf("could not unmount vol: %s", err)
 	}
 
@@ -273,18 +280,22 @@ func (d driver) saveVol(name string, vol volume) error {
 	})
 }
 
-func (v *volume) mount(mnt string) error {
+func (d driver) mountVolume(v *volume, mnt string) error {
+	var mountPoint string
+	var err error
+
 	if v.RemotePath != "" && v.RemotePath != "/" {
-		if err := v.createRemoteMount(); err != nil {
-			return fmt.Errorf("error creating remote directory: %s", err)
+		mountPoint, err = ioutil.TempDir("", "docker-plugin-cephfs_mnt_")
+		if err != nil {
+			return fmt.Errorf("error creating temporary mountpoint: %s", err)
+		}
+	} else {
+		mountPoint = path.Join(mountDir, mnt)
+		if err := os.MkdirAll(mountPoint, 0755); err != nil {
+			return fmt.Errorf("error creating mountpoint %s: %s", mountPoint, err)
 		}
 	}
 
-	mountPoint := path.Join(mountDir, mnt)
-	if err := os.MkdirAll(mountPoint, 0755); err != nil {
-		return fmt.Errorf("error creating mountpoint %s: %s", mountPoint, err)
-	}
-
 	secret, err := v.secret()
 	if err != nil {
 		return fmt.Errorf("error loading secret: %s", err)
@@ -295,76 +306,56 @@ func (v *volume) mount(mnt string) error {
 		opts = opts + "," + v.MountOpts
 	}
 
-	connStr := connstr(v.Servers, v.RemotePath)
-	cmd := execCommand("mount", "-t", "ceph", "-o", opts, connStr, mountPoint)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("error mounting: %s\ncommand output: %s", err, out)
+	connStr := connstr(v.Servers, "/")
+	if err = d.mnt.Mount(connStr, mountPoint, "ceph", "-o "+opts); err != nil {
+		return fmt.Errorf("error mounting: %s", err)
 	}
 
-	v.MountPoint = mountPoint
+	if v.RemotePath != "" && v.RemotePath != "/" {
+		desiredMount := path.Join(mountPoint, v.RemotePath)
+		stat, err := os.Stat(desiredMount)
+		if !os.IsNotExist(err) {
+			if err = d.mnt.Unmount(mountPoint); err != nil {
+				return fmt.Errorf("failed unmounting volume: %s", err)
+			}
 
-	return nil
-}
+			if !stat.IsDir() {
+				return fmt.Errorf("remote mount is a file")
+			}
 
-func (v volume) createRemoteMount() error {
-	mountPoint, err := ioutil.TempDir("", "mnt_")
-	if err != nil {
-		return fmt.Errorf("error creating temporary mountpoint: %s", err)
-	}
+			return nil
+		}
 
-	secret, err := v.secret()
-	if err != nil {
-		return fmt.Errorf("error loading secret: %s", err)
-	}
+		if err = os.MkdirAll(desiredMount, 0755); err != nil {
+			return fmt.Errorf("unable to make remote mount: %s", err)
+		}
 
-	opts := "name=" + v.ClientName + ",secret=" + secret
-	if v.MountOpts != "" {
-		opts = opts + "," + v.MountOpts
-	}
-
-	connStr := connstr(v.Servers, "")
-	cmd := execCommand("mount", "-t", "ceph", "-o", opts, connStr, mountPoint)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("error mounting: %s\ncommand output: %s", err, out)
-	}
-
-	desiredMount := path.Join(mountPoint, v.RemotePath)
-	stat, err := os.Stat(desiredMount)
-	if !os.IsNotExist(err) {
-		if err = syscall.Unmount(mountPoint, 0); err != nil {
+		if err = d.mnt.Unmount(mountPoint); err != nil {
 			return fmt.Errorf("failed unmounting volume: %s", err)
 		}
 
-		if !stat.IsDir() {
-			return fmt.Errorf("remote mount is a file")
+		connStr = connstr(v.Servers, v.RemotePath)
+		mountPoint = path.Join(mountDir, mnt)
+		if err = d.mnt.Mount(connStr, mountPoint, "ceph", "-o "+opts); err != nil {
+			return fmt.Errorf("error mounting: %s", err)
 		}
-
-		return nil
 	}
 
-	if err = os.MkdirAll(desiredMount, 0755); err != nil {
-		return fmt.Errorf("unable to make remote mount: %s", err)
-	}
-
-	if err = syscall.Unmount(mountPoint, 0); err != nil {
-		return fmt.Errorf("failed unmounting volume: %s", err)
-	}
-
+	v.MountPoint = mountPoint
 	return nil
 }
 
-func (v volume) unmount() error {
+func (d driver) unmountVolume(v *volume) error {
 	if v.MountPoint == "" {
 		return fmt.Errorf("volume is not mounted")
 	}
 
-	err := syscall.Unmount(v.MountPoint, 0)
+	err := d.mnt.Unmount(v.MountPoint)
 	if err != nil {
 		return fmt.Errorf("failed unmounting volume: %s", err)
 	}
 
 	v.MountPoint = ""
-
 	return nil
 }
 
@@ -458,6 +449,7 @@ func newDriver(db *bolt.DB) driver {
 		clientName:  envOrDefault("CLIENT_NAME", defaultClientName),
 		clusterName: envOrDefault("CLUSTER_NAME", defaultClusterName),
 		servers:     servers,
+		mnt:         fsMounter{},
 		DB:          db,
 	}
 	return driver
