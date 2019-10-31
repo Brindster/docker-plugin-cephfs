@@ -31,11 +31,11 @@ type Volume struct {
 }
 
 type Driver struct {
-	configPath  string
-	clientName  string
-	clusterName string
-	mountPath   string
-	servers     []string
+	ConfigPath  string
+	ClientName  string
+	ClusterName string
+	MountPath   string
+	Servers     []string
 	secretCache map[string]string
 	mnt         Mounter
 	dir         DirectoryMaker
@@ -71,14 +71,14 @@ func (d Driver) Create(req *plugin.CreateRequest) error {
 	defer d.Unlock()
 
 	v := Volume{
-		ClientName:  d.clientName,
+		ClientName:  d.ClientName,
 		MountPoint:  "",
 		CreatedAt:   time.Now().Format(time.RFC3339),
 		Status:      nil,
-		Servers:     d.servers,
-		ClusterName: d.clusterName,
-		ConfigPath:  d.configPath,
-		Keyring:     fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.configPath, "/"), d.clusterName, d.clientName),
+		Servers:     d.Servers,
+		ClusterName: d.ClusterName,
+		ConfigPath:  d.ConfigPath,
+		Keyring:     fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.ConfigPath, "/"), d.ClusterName, d.ClientName),
 		Connections: 0,
 		RemotePath:  req.Name,
 	}
@@ -87,7 +87,7 @@ func (d Driver) Create(req *plugin.CreateRequest) error {
 		switch key {
 		case "client_name":
 			v.ClientName = val
-			v.Keyring = fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.configPath, "/"), d.clusterName, val)
+			v.Keyring = fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.ConfigPath, "/"), d.ClusterName, val)
 		case "keyring":
 			v.Keyring = val
 		case "mount_opts":
@@ -302,7 +302,7 @@ func (d Driver) mountVolume(v *Volume, mnt string) error {
 
 		defer os.RemoveAll(mountPoint)
 	} else {
-		mountPoint = path.Join(d.mountPath, mnt)
+		mountPoint = path.Join(d.MountPath, mnt)
 		if err := d.dir.MakeDir(mountPoint, 0755); err != nil {
 			return fmt.Errorf("error creating mountpoint %s: %s", mountPoint, err)
 		}
@@ -337,7 +337,7 @@ func (d Driver) mountVolume(v *Volume, mnt string) error {
 		}
 
 		connStr = CephConnStr(v.Servers, v.RemotePath)
-		mountPoint = path.Join(d.mountPath, mnt)
+		mountPoint = path.Join(d.MountPath, mnt)
 		if err = d.mnt.Mount(connStr, mountPoint, "ceph", opts); err != nil {
 			return fmt.Errorf("error mounting: %s", err)
 		}
@@ -413,11 +413,11 @@ func NewDriver(db *bolt.DB) Driver {
 	servers := strings.Split(srv, ",")
 
 	driver := Driver{
-		configPath:  defaultConfigPath,
-		clientName:  EnvOrDefault("CLIENT_NAME", defaultClientName),
-		clusterName: EnvOrDefault("CLUSTER_NAME", defaultClusterName),
-		mountPath:   EnvOrDefault("VOLUME_MOUNT_ROOT", plugin.DefaultDockerRootDirectory),
-		servers:     servers,
+		ConfigPath:  defaultConfigPath,
+		ClientName:  EnvOrDefault("CLIENT_NAME", defaultClientName),
+		ClusterName: EnvOrDefault("CLUSTER_NAME", defaultClusterName),
+		MountPath:   EnvOrDefault("VOLUME_MOUNT_ROOT", plugin.DefaultDockerRootDirectory),
+		Servers:     servers,
 		mnt:         fsMounter{},
 		dir:         osDirectoryMaker{},
 		DB:          db,

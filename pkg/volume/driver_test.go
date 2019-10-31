@@ -27,26 +27,26 @@ func Test_newDriver(t *testing.T) {
 		want *Driver
 	}{
 		{"default", []string{}, &Driver{
-			configPath:  defaultConfigPath,
-			clientName:  defaultClientName,
-			clusterName: defaultClusterName,
-			servers:     []string{"localhost"},
+			ConfigPath:  defaultConfigPath,
+			ClientName:  defaultClientName,
+			ClusterName: defaultClusterName,
+			Servers:     []string{"localhost"},
 			DB:          db,
 			RWMutex:     sync.RWMutex{},
 		}},
 		{"server set", []string{"SERVERS=ceph1"}, &Driver{
-			configPath:  defaultConfigPath,
-			clientName:  defaultClientName,
-			clusterName: defaultClusterName,
-			servers:     []string{"ceph1"},
+			ConfigPath:  defaultConfigPath,
+			ClientName:  defaultClientName,
+			ClusterName: defaultClusterName,
+			Servers:     []string{"ceph1"},
 			DB:          db,
 			RWMutex:     sync.RWMutex{},
 		}},
 		{"servers set", []string{"SERVERS=ceph1,ceph2,ceph3"}, &Driver{
-			configPath:  defaultConfigPath,
-			clientName:  defaultClientName,
-			clusterName: defaultClusterName,
-			servers:     []string{"ceph1", "ceph2", "ceph3"},
+			ConfigPath:  defaultConfigPath,
+			ClientName:  defaultClientName,
+			ClusterName: defaultClusterName,
+			Servers:     []string{"ceph1", "ceph2", "ceph3"},
 			DB:          db,
 			RWMutex:     sync.RWMutex{},
 		}},
@@ -63,20 +63,20 @@ func Test_newDriver(t *testing.T) {
 			}
 
 			got := NewDriver(db)
-			if got.clusterName != tt.want.clusterName {
-				t.Errorf("newDriver().clusterName = %v, want %v", got.clusterName, tt.want.clusterName)
+			if got.ClusterName != tt.want.ClusterName {
+				t.Errorf("newDriver().clusterName = %v, want %v", got.ClusterName, tt.want.ClusterName)
 			}
 
-			if got.clientName != tt.want.clientName {
-				t.Errorf("newDriver().clientName = %v, want %v", got.clientName, tt.want.clientName)
+			if got.ClientName != tt.want.ClientName {
+				t.Errorf("newDriver().clientName = %v, want %v", got.ClientName, tt.want.ClientName)
 			}
 
-			if got.configPath != tt.want.configPath {
-				t.Errorf("newDriver().configPath = %v, want %v", got.configPath, tt.want.configPath)
+			if got.ConfigPath != tt.want.ConfigPath {
+				t.Errorf("newDriver().configPath = %v, want %v", got.ConfigPath, tt.want.ConfigPath)
 			}
 
-			if !reflect.DeepEqual(got.servers, tt.want.servers) {
-				t.Errorf("newDriver().servers = %v, want %v", got.servers, tt.want.servers)
+			if !reflect.DeepEqual(got.Servers, tt.want.Servers) {
+				t.Errorf("newDriver().servers = %v, want %v", got.Servers, tt.want.Servers)
 			}
 
 			if !reflect.DeepEqual(got.DB, tt.want.DB) {
@@ -185,10 +185,10 @@ func TestDriver_Create(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := Driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
+				ConfigPath:  tt.fields.configPath,
+				ClientName:  tt.fields.clientName,
+				ClusterName: tt.fields.clusterName,
+				Servers:     tt.fields.servers,
 				mnt:         &mockMounter{},
 				DB:          tt.fields.DB,
 				RWMutex:     tt.fields.RWMutex,
@@ -269,10 +269,10 @@ func TestDriver_Get(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			d := Driver{
-				configPath:  tt.fields.configPath,
-				clientName:  tt.fields.clientName,
-				clusterName: tt.fields.clusterName,
-				servers:     tt.fields.servers,
+				ConfigPath:  tt.fields.configPath,
+				ClientName:  tt.fields.clientName,
+				ClusterName: tt.fields.clusterName,
+				Servers:     tt.fields.servers,
 				mnt:         &mockMounter{},
 				DB:          tt.fields.DB,
 				RWMutex:     tt.fields.RWMutex,
@@ -294,10 +294,10 @@ func TestDriver_List(t *testing.T) {
 	defer must(db.Close)
 
 	drv := Driver{
-		configPath:  defaultConfigPath,
-		clientName:  defaultClientName,
-		clusterName: defaultClusterName,
-		servers:     []string{"localhost"},
+		ConfigPath:  defaultConfigPath,
+		ClientName:  defaultClientName,
+		ClusterName: defaultClusterName,
+		Servers:     []string{"localhost"},
 		mnt:         &mockMounter{},
 		DB:          db,
 		RWMutex:     sync.RWMutex{},
@@ -347,11 +347,11 @@ func TestDriver_Mount(t *testing.T) {
 	defer must(remove)
 
 	drv := Driver{
-		configPath:  defaultConfigPath,
-		clientName:  defaultClientName,
-		clusterName: defaultClusterName,
-		mountPath:   mountRoot,
-		servers:     []string{"localhost"},
+		ConfigPath:  defaultConfigPath,
+		ClientName:  defaultClientName,
+		ClusterName: defaultClusterName,
+		MountPath:   mountRoot,
+		Servers:     []string{"localhost"},
 		mnt:         &mockMounter{},
 		dir:         &osDirectoryMaker{},
 		DB:          db,
@@ -559,11 +559,11 @@ func TestDriver_mountVolume(t *testing.T) {
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{}
 	drv := Driver{
-		configPath:  defaultConfigPath,
-		clientName:  defaultClientName,
-		clusterName: defaultClusterName,
-		mountPath:   plugin.DefaultDockerRootDirectory,
-		servers:     []string{"localhost"},
+		ConfigPath:  defaultConfigPath,
+		ClientName:  defaultClientName,
+		ClusterName: defaultClusterName,
+		MountPath:   plugin.DefaultDockerRootDirectory,
+		Servers:     []string{"localhost"},
 		dir:         &dir,
 		mnt:         &mnt,
 		DB:          &bolt.DB{},
@@ -625,7 +625,7 @@ func TestDriver_mountVolume_withRemotePath(t *testing.T) {
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{MakeTempDirResponse: MakeTempDirResponse{"/tmp/docker-plugin-cephfs_mnt", nil}}
 	drv := Driver{
-		mountPath: plugin.DefaultDockerRootDirectory,
+		MountPath: plugin.DefaultDockerRootDirectory,
 		DB:        &bolt.DB{},
 		mnt:       &mnt,
 		dir:       &dir,
@@ -674,7 +674,7 @@ func TestDriver_mountVolume_withMountOpts(t *testing.T) {
 		error
 	}{"/tmp/docker-plugin-cephfs_mnt", nil}}
 	drv := Driver{
-		mountPath: plugin.DefaultDockerRootDirectory,
+		MountPath: plugin.DefaultDockerRootDirectory,
 		DB:        &bolt.DB{},
 		mnt:       &mnt,
 		dir:       &dir,
