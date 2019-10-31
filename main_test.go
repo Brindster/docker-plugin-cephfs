@@ -24,9 +24,9 @@ func Test_newDriver(t *testing.T) {
 	tests := []struct {
 		name string
 		envs []string
-		want *driver
+		want *Driver
 	}{
-		{"default", []string{}, &driver{
+		{"default", []string{}, &Driver{
 			configPath:  defaultConfigPath,
 			clientName:  defaultClientName,
 			clusterName: defaultClusterName,
@@ -34,7 +34,7 @@ func Test_newDriver(t *testing.T) {
 			DB:          db,
 			RWMutex:     sync.RWMutex{},
 		}},
-		{"server set", []string{"SERVERS=ceph1"}, &driver{
+		{"server set", []string{"SERVERS=ceph1"}, &Driver{
 			configPath:  defaultConfigPath,
 			clientName:  defaultClientName,
 			clusterName: defaultClusterName,
@@ -42,7 +42,7 @@ func Test_newDriver(t *testing.T) {
 			DB:          db,
 			RWMutex:     sync.RWMutex{},
 		}},
-		{"servers set", []string{"SERVERS=ceph1,ceph2,ceph3"}, &driver{
+		{"servers set", []string{"SERVERS=ceph1,ceph2,ceph3"}, &Driver{
 			configPath:  defaultConfigPath,
 			clientName:  defaultClientName,
 			clusterName: defaultClusterName,
@@ -62,7 +62,7 @@ func Test_newDriver(t *testing.T) {
 				}
 			}
 
-			got := newDriver(db)
+			got := NewDriver(db)
 			if got.clusterName != tt.want.clusterName {
 				t.Errorf("newDriver().clusterName = %v, want %v", got.clusterName, tt.want.clusterName)
 			}
@@ -87,7 +87,7 @@ func Test_newDriver(t *testing.T) {
 }
 
 func TestDriver_Capabilities(t *testing.T) {
-	d := driver{}
+	d := Driver{}
 	got := d.Capabilities()
 	want := &plugin.CapabilitiesResponse{Capabilities: plugin.Capability{Scope: "local"}}
 
@@ -122,9 +122,9 @@ func TestDriver_Create(t *testing.T) {
 		fields  fields
 		args    args
 		wantErr bool
-		want    *volume
+		want    *Volume
 	}{
-		{"valid", drv, args{&plugin.CreateRequest{Name: "test.1"}}, false, &volume{
+		{"valid", drv, args{&plugin.CreateRequest{Name: "test.1"}}, false, &Volume{
 			ClientName:  defaultClientName,
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
@@ -132,7 +132,7 @@ func TestDriver_Create(t *testing.T) {
 			RemotePath:  "test.1",
 			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
-		{"with client_name", drv, args{&plugin.CreateRequest{Name: "test.2", Options: map[string]string{"client_name": "user"}}}, false, &volume{
+		{"with client_name", drv, args{&plugin.CreateRequest{Name: "test.2", Options: map[string]string{"client_name": "user"}}}, false, &Volume{
 			ClientName:  "user",
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
@@ -140,7 +140,7 @@ func TestDriver_Create(t *testing.T) {
 			RemotePath:  "test.2",
 			Keyring:     "/etc/ceph/ceph.client.user.keyring",
 		}},
-		{"with mount_opts", drv, args{&plugin.CreateRequest{Name: "test.3", Options: map[string]string{"mount_opts": "name=user,secret=abc"}}}, false, &volume{
+		{"with mount_opts", drv, args{&plugin.CreateRequest{Name: "test.3", Options: map[string]string{"mount_opts": "name=user,secret=abc"}}}, false, &Volume{
 			ClientName:  defaultClientName,
 			MountOpts:   "name=user,secret=abc",
 			Servers:     []string{"localhost"},
@@ -149,7 +149,7 @@ func TestDriver_Create(t *testing.T) {
 			RemotePath:  "test.3",
 			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
-		{"with remote_path", drv, args{&plugin.CreateRequest{Name: "test.4", Options: map[string]string{"remote_path": "/data/mnt"}}}, false, &volume{
+		{"with remote_path", drv, args{&plugin.CreateRequest{Name: "test.4", Options: map[string]string{"remote_path": "/data/mnt"}}}, false, &Volume{
 			ClientName:  defaultClientName,
 			RemotePath:  "/data/mnt",
 			Servers:     []string{"localhost"},
@@ -157,7 +157,7 @@ func TestDriver_Create(t *testing.T) {
 			ConfigPath:  defaultConfigPath,
 			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
-		{"with servers", drv, args{&plugin.CreateRequest{Name: "test.5", Options: map[string]string{"servers": "monitor1:6798,monitor2:6798"}}}, false, &volume{
+		{"with servers", drv, args{&plugin.CreateRequest{Name: "test.5", Options: map[string]string{"servers": "monitor1:6798,monitor2:6798"}}}, false, &Volume{
 			ClientName:  defaultClientName,
 			Servers:     []string{"monitor1:6798", "monitor2:6798"},
 			ClusterName: defaultClusterName,
@@ -165,7 +165,7 @@ func TestDriver_Create(t *testing.T) {
 			RemotePath:  "test.5",
 			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
-		{"duplicate name", drv, args{&plugin.CreateRequest{Name: "test.1"}}, false, &volume{
+		{"duplicate name", drv, args{&plugin.CreateRequest{Name: "test.1"}}, false, &Volume{
 			ClientName:  defaultClientName,
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
@@ -173,7 +173,7 @@ func TestDriver_Create(t *testing.T) {
 			RemotePath:  "test.1",
 			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
-		{"with keyring", drv, args{&plugin.CreateRequest{Name: "test.6", Options: map[string]string{"keyring": "/etc/ceph/test.keyring"}}}, false, &volume{
+		{"with keyring", drv, args{&plugin.CreateRequest{Name: "test.6", Options: map[string]string{"keyring": "/etc/ceph/test.keyring"}}}, false, &Volume{
 			ClientName:  defaultClientName,
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
@@ -184,7 +184,7 @@ func TestDriver_Create(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
+			d := Driver{
 				configPath:  tt.fields.configPath,
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
@@ -231,7 +231,7 @@ func TestDriver_Get(t *testing.T) {
 		RWMutex:     sync.RWMutex{},
 	}
 	defer must(drv.DB.Close)
-	vols := []volume{
+	vols := []Volume{
 		{
 			MountPoint: "",
 			CreatedAt:  "2019-01-01T01:01:01Z",
@@ -268,7 +268,7 @@ func TestDriver_Get(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{
+			d := Driver{
 				configPath:  tt.fields.configPath,
 				clientName:  tt.fields.clientName,
 				clusterName: tt.fields.clusterName,
@@ -293,7 +293,7 @@ func TestDriver_List(t *testing.T) {
 	db := genMockDb()
 	defer must(db.Close)
 
-	drv := driver{
+	drv := Driver{
 		configPath:  defaultConfigPath,
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
@@ -303,7 +303,7 @@ func TestDriver_List(t *testing.T) {
 		RWMutex:     sync.RWMutex{},
 	}
 
-	vols := []volume{
+	vols := []Volume{
 		{
 			MountPoint: "",
 			CreatedAt:  "2019-01-01T01:01:01Z",
@@ -346,7 +346,7 @@ func TestDriver_Mount(t *testing.T) {
 	mountRoot, remove := prepareTempDir()
 	defer must(remove)
 
-	drv := driver{
+	drv := Driver{
 		configPath:  defaultConfigPath,
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
@@ -361,14 +361,14 @@ func TestDriver_Mount(t *testing.T) {
 	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
 	defer must(cleanup)
 
-	vol := volume{
+	vol := Volume{
 		MountPoint: "",
 		CreatedAt:  "2019-01-01T01:01:01Z",
 		Status:     nil,
 		ClientName: "admin",
 		Keyring:    keyring,
 	}
-	must(func() error { return prepareMockData(drv.DB, []volume{vol}) })
+	must(func() error { return prepareMockData(drv.DB, []Volume{vol}) })
 
 	got, err := drv.Mount(&plugin.MountRequest{Name: "test.1", ID: "624F80C6-F050-42BF-8B02-387AA892782F"})
 	if err != nil {
@@ -385,7 +385,7 @@ func TestDriver_Mount(t *testing.T) {
 func TestDriver_Path(t *testing.T) {
 	db := genMockDb()
 	defer must(db.Close)
-	vols := []volume{
+	vols := []Volume{
 		{
 			MountPoint: "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913",
 			CreatedAt:  "2019-01-01T01:01:01Z",
@@ -414,7 +414,7 @@ func TestDriver_Path(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{mnt: &mockMounter{}, DB: db}
+			d := Driver{mnt: &mockMounter{}, DB: db}
 			got, err := d.Path(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Path() error = %v, wantErr %v", err, tt.wantErr)
@@ -431,7 +431,7 @@ func TestDriver_Remove(t *testing.T) {
 	db := genMockDb()
 	defer must(db.Close)
 
-	vols := []volume{
+	vols := []Volume{
 		{
 			MountPoint:  "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913",
 			CreatedAt:   "2019-01-01T01:01:01Z",
@@ -461,7 +461,7 @@ func TestDriver_Remove(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{mnt: &mockMounter{}, DB: db}
+			d := Driver{mnt: &mockMounter{}, DB: db}
 			err := d.Remove(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Remove() error = %v, wantErr %v", err, tt.wantErr)
@@ -486,7 +486,7 @@ func TestDriver_Unmount(t *testing.T) {
 	db := genMockDb()
 	defer must(db.Close)
 
-	vols := []volume{
+	vols := []Volume{
 		{
 			MountPoint:  "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913",
 			CreatedAt:   "2019-01-01T01:01:01Z",
@@ -523,7 +523,7 @@ func TestDriver_Unmount(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			d := driver{mnt: &mockMounter{UnmountResponse: tt.umntResp}, DB: db}
+			d := Driver{mnt: &mockMounter{UnmountResponse: tt.umntResp}, DB: db}
 			err := d.Unmount(tt.args.req)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("Unmount() error = %v, wantErr %v", err, tt.wantErr)
@@ -558,7 +558,7 @@ func TestDriver_Unmount(t *testing.T) {
 func TestDriver_mountVolume(t *testing.T) {
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{}
-	drv := driver{
+	drv := Driver{
 		configPath:  defaultConfigPath,
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
@@ -572,7 +572,7 @@ func TestDriver_mountVolume(t *testing.T) {
 	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
 	defer must(cleanup)
 
-	vol := &volume{
+	vol := &Volume{
 		ClientName: "admin",
 		Keyring:    keyring,
 		Servers:    []string{"localhost"},
@@ -602,8 +602,8 @@ func TestDriver_mountVolume(t *testing.T) {
 func TestDriver_mountVolume_alreadyConnected(t *testing.T) {
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{}
-	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
-	vol := &volume{Connections: 1}
+	drv := Driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+	vol := &Volume{Connections: 1}
 
 	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
 	if got != nil {
@@ -624,7 +624,7 @@ func TestDriver_mountVolume_alreadyConnected(t *testing.T) {
 func TestDriver_mountVolume_withRemotePath(t *testing.T) {
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{MakeTempDirResponse: MakeTempDirResponse{"/tmp/docker-plugin-cephfs_mnt", nil}}
-	drv := driver{
+	drv := Driver{
 		mountPath: plugin.DefaultDockerRootDirectory,
 		DB:        &bolt.DB{},
 		mnt:       &mnt,
@@ -634,7 +634,7 @@ func TestDriver_mountVolume_withRemotePath(t *testing.T) {
 	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
 	defer must(cleanup)
 
-	vol := &volume{
+	vol := &Volume{
 		ClientName: "admin",
 		Keyring:    keyring,
 		Servers:    []string{"localhost"},
@@ -673,7 +673,7 @@ func TestDriver_mountVolume_withMountOpts(t *testing.T) {
 		string
 		error
 	}{"/tmp/docker-plugin-cephfs_mnt", nil}}
-	drv := driver{
+	drv := Driver{
 		mountPath: plugin.DefaultDockerRootDirectory,
 		DB:        &bolt.DB{},
 		mnt:       &mnt,
@@ -683,7 +683,7 @@ func TestDriver_mountVolume_withMountOpts(t *testing.T) {
 	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
 	defer must(cleanup)
 
-	vol := &volume{
+	vol := &Volume{
 		ClientName: "admin",
 		Keyring:    keyring,
 		Servers:    []string{"localhost"},
@@ -707,9 +707,9 @@ func TestDriver_mountVolume_tempDirFailure(t *testing.T) {
 
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{MakeTempDirResponse: MakeTempDirResponse{"", want}}
-	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+	drv := Driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
 
-	vol := &volume{RemotePath: "Banana"}
+	vol := &Volume{RemotePath: "Banana"}
 
 	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
 	if got == nil || !strings.Contains(got.Error(), want.Error()) {
@@ -723,9 +723,9 @@ func TestDriver_mountVolume_makeDirFailure(t *testing.T) {
 
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{MakeDirResponse: want}
-	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+	drv := Driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
 
-	vol := &volume{}
+	vol := &Volume{}
 
 	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
 	if got == nil || !strings.Contains(got.Error(), want.Error()) {
@@ -739,9 +739,9 @@ func TestDriver_mountVolume_keyringDoesntExist(t *testing.T) {
 
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{}
-	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+	drv := Driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
 
-	vol := &volume{Keyring: "/not-a-real-file"}
+	vol := &Volume{Keyring: "/not-a-real-file"}
 
 	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
 	if got == nil || !strings.Contains(got.Error(), want.Error()) {
@@ -755,12 +755,12 @@ func TestDriver_mountVolume_keyringMismatch(t *testing.T) {
 
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{}
-	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+	drv := Driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
 
 	keyring, cleanup := prepareKeyring("[client.user]\nkey = ABC123")
 	defer must(cleanup)
 
-	vol := &volume{ClientName: "docker", Keyring: keyring}
+	vol := &Volume{ClientName: "docker", Keyring: keyring}
 
 	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
 	if got == nil || !strings.Contains(got.Error(), want.Error()) {
@@ -774,12 +774,12 @@ func TestDriver_mountVolume_keyringMissingKey(t *testing.T) {
 
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{}
-	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+	drv := Driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
 
 	keyring, cleanup := prepareKeyring("[client.user]\nods = 'allow rw'")
 	defer must(cleanup)
 
-	vol := &volume{ClientName: "user", Keyring: keyring}
+	vol := &Volume{ClientName: "user", Keyring: keyring}
 
 	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
 	if got == nil || !strings.Contains(got.Error(), want.Error()) {
@@ -901,7 +901,7 @@ func genMockDb() *bolt.DB {
 	return db
 }
 
-func prepareMockData(db *bolt.DB, vols []volume) error {
+func prepareMockData(db *bolt.DB, vols []Volume) error {
 	return db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(volumeBucket)
 		for id, v := range vols {

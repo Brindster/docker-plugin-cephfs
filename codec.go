@@ -5,7 +5,7 @@ import (
 	"encoding/gob"
 )
 
-func serialize(v volume) ([]byte, error) {
+func serialize(v Volume) ([]byte, error) {
 	var buf bytes.Buffer
 	enc := gob.NewEncoder(&buf)
 	if err := enc.Encode(v); err != nil {
@@ -15,12 +15,12 @@ func serialize(v volume) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func unserialize(in []byte) (*volume, error) {
+func unserialize(in []byte) (*Volume, error) {
 	var buf bytes.Buffer
 
 	buf.Write(in)
 
-	out := &volume{}
+	out := &Volume{}
 	dec := gob.NewDecoder(&buf)
 	if err := dec.Decode(out); err != nil {
 		return nil, err

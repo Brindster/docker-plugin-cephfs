@@ -94,13 +94,13 @@ func TestOsDirectoryMaker_MakeTempDir(t *testing.T) {
 func TestCephConnStr(t *testing.T) {
 	tests := []struct {
 		name   string
-		volume *volume
+		volume *Volume
 		want   string
 	}{
-		{"default", &volume{Servers: []string{"localhost"}}, "localhost:/"},
-		{"multiple servers", &volume{Servers: []string{"serv1", "serv2", "serv3"}}, "serv1,serv2,serv3:/"},
-		{"remote path", &volume{Servers: []string{"mon1", "mon2"}, RemotePath: "/service"}, "mon1,mon2:/service"},
-		{"path missing slash", &volume{Servers: []string{"localhost"}, RemotePath: "service"}, "localhost:/service"},
+		{"default", &Volume{Servers: []string{"localhost"}}, "localhost:/"},
+		{"multiple servers", &Volume{Servers: []string{"serv1", "serv2", "serv3"}}, "serv1,serv2,serv3:/"},
+		{"remote path", &Volume{Servers: []string{"mon1", "mon2"}, RemotePath: "/service"}, "mon1,mon2:/service"},
+		{"path missing slash", &Volume{Servers: []string{"localhost"}, RemotePath: "service"}, "localhost:/service"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

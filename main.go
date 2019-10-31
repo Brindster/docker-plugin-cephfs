@@ -14,7 +14,7 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-type volume struct {
+type Volume struct {
 	ClientName string
 	MountPoint string
 	CreatedAt  string
@@ -30,25 +30,25 @@ type volume struct {
 	Connections int
 }
 
-type driver struct {
+type Driver struct {
 	configPath  string
 	clientName  string
 	clusterName string
 	mountPath   string
 	servers     []string
 	secretCache map[string]string
-	mnt         mounter
-	dir         directoryMaker
+	mnt         Mounter
+	dir         DirectoryMaker
 	*bolt.DB
 	sync.RWMutex
 }
 
-type mounter interface {
+type Mounter interface {
 	Mount(source string, target string, fstype string, data string) error
 	Unmount(target string) error
 }
 
-type directoryMaker interface {
+type DirectoryMaker interface {
 	IsDir(dir string) bool
 	MakeDir(dir string, mode os.FileMode) error
 	MakeTempDir() (string, error)
@@ -66,11 +66,11 @@ var (
 )
 
 // Create will create a new volume
-func (d driver) Create(req *plugin.CreateRequest) error {
+func (d Driver) Create(req *plugin.CreateRequest) error {
 	d.Lock()
 	defer d.Unlock()
 
-	v := volume{
+	v := Volume{
 		ClientName:  d.clientName,
 		MountPoint:  "",
 		CreatedAt:   time.Now().Format(time.RFC3339),
@@ -108,7 +108,7 @@ func (d driver) Create(req *plugin.CreateRequest) error {
 }
 
 // List will list all of the created volumes
-func (d driver) List() (*plugin.ListResponse, error) {
+func (d Driver) List() (*plugin.ListResponse, error) {
 	d.RLock()
 	defer d.RUnlock()
 
@@ -144,7 +144,7 @@ func (d driver) List() (*plugin.ListResponse, error) {
 }
 
 // Get will return a single volume
-func (d driver) Get(req *plugin.GetRequest) (*plugin.GetResponse, error) {
+func (d Driver) Get(req *plugin.GetRequest) (*plugin.GetResponse, error) {
 	d.RLock()
 	defer d.RUnlock()
 
@@ -164,7 +164,7 @@ func (d driver) Get(req *plugin.GetRequest) (*plugin.GetResponse, error) {
 }
 
 // Remove will remove the volume
-func (d driver) Remove(req *plugin.RemoveRequest) error {
+func (d Driver) Remove(req *plugin.RemoveRequest) error {
 	d.Lock()
 	defer d.Unlock()
 
@@ -190,7 +190,7 @@ func (d driver) Remove(req *plugin.RemoveRequest) error {
 }
 
 // Path will return the path to the volume
-func (d driver) Path(req *plugin.PathRequest) (*plugin.PathResponse, error) {
+func (d Driver) Path(req *plugin.PathRequest) (*plugin.PathResponse, error) {
 	d.RLock()
 	defer d.RUnlock()
 
@@ -203,7 +203,7 @@ func (d driver) Path(req *plugin.PathRequest) (*plugin.PathResponse, error) {
 }
 
 // Mount will mount the volume
-func (d driver) Mount(req *plugin.MountRequest) (*plugin.MountResponse, error) {
+func (d Driver) Mount(req *plugin.MountRequest) (*plugin.MountResponse, error) {
 	d.Lock()
 	defer d.Unlock()
 
@@ -226,7 +226,7 @@ func (d driver) Mount(req *plugin.MountRequest) (*plugin.MountResponse, error) {
 }
 
 // Unmount will unmount the volume
-func (d driver) Unmount(req *plugin.UnmountRequest) error {
+func (d Driver) Unmount(req *plugin.UnmountRequest) error {
 	d.Lock()
 	defer d.Unlock()
 
@@ -247,7 +247,7 @@ func (d driver) Unmount(req *plugin.UnmountRequest) error {
 }
 
 // Capabilities will return the capabilities of the driver
-func (d driver) Capabilities() *plugin.CapabilitiesResponse {
+func (d Driver) Capabilities() *plugin.CapabilitiesResponse {
 	return &plugin.CapabilitiesResponse{
 		Capabilities: plugin.Capability{
 			Scope: "local",
@@ -255,8 +255,8 @@ func (d driver) Capabilities() *plugin.CapabilitiesResponse {
 	}
 }
 
-func (d driver) fetchVol(name string) (*volume, error) {
-	var vol *volume
+func (d Driver) fetchVol(name string) (*Volume, error) {
+	var vol *Volume
 	err := d.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket(volumeBucket)
 		v := b.Get([]byte(name))
@@ -273,7 +273,7 @@ func (d driver) fetchVol(name string) (*volume, error) {
 	return vol, err
 }
 
-func (d driver) saveVol(name string, vol volume) error {
+func (d Driver) saveVol(name string, vol Volume) error {
 	enc, err := serialize(vol)
 	if err != nil {
 		return fmt.Errorf("could not serialize volume: %s", err)
@@ -285,7 +285,7 @@ func (d driver) saveVol(name string, vol volume) error {
 	})
 }
 
-func (d driver) mountVolume(v *volume, mnt string) error {
+func (d Driver) mountVolume(v *Volume, mnt string) error {
 	var mountPoint string
 	var err error
 
@@ -348,7 +348,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 	return nil
 }
 
-func (d driver) unmountVolume(v *volume) error {
+func (d Driver) unmountVolume(v *Volume) error {
 	if v.MountPoint == "" {
 		return fmt.Errorf("volume is not mounted")
 	}
@@ -367,7 +367,7 @@ func (d driver) unmountVolume(v *volume) error {
 	return nil
 }
 
-func (d driver) secret(v volume) (string, error) {
+func (d Driver) secret(v Volume) (string, error) {
 	if secret, ok := d.secretCache[v.ClientName]; ok {
 		return secret, nil
 	}
@@ -399,7 +399,7 @@ func (d driver) secret(v volume) (string, error) {
 	return secret, nil
 }
 
-func newDriver(db *bolt.DB) driver {
+func NewDriver(db *bolt.DB) Driver {
 	err := db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists(volumeBucket)
 		return err
@@ -412,7 +412,7 @@ func newDriver(db *bolt.DB) driver {
 	srv := EnvOrDefault("SERVERS", "localhost")
 	servers := strings.Split(srv, ",")
 
-	driver := driver{
+	driver := Driver{
 		configPath:  defaultConfigPath,
 		clientName:  EnvOrDefault("CLIENT_NAME", defaultClientName),
 		clusterName: EnvOrDefault("CLUSTER_NAME", defaultClusterName),
@@ -433,7 +433,7 @@ func main() {
 		log.Fatalf("Could not open the database: %s", err)
 	}
 
-	driver := newDriver(db)
+	driver := NewDriver(db)
 	handler := plugin.NewHandler(driver)
 	log.Fatal(handler.ServeUnix(socketName, 1))
 }
