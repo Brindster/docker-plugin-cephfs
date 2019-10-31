@@ -34,6 +34,7 @@ type driver struct {
 	configPath  string
 	clientName  string
 	clusterName string
+	mountPath   string
 	servers     []string
 	mnt         mounter
 	dir         directoryMaker
@@ -59,7 +60,6 @@ const (
 )
 
 var (
-	mountDir     = plugin.DefaultDockerRootDirectory
 	socketName   = "cephfs"
 	volumeBucket = []byte("volumes")
 )
@@ -300,7 +300,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 
 		defer os.RemoveAll(mountPoint)
 	} else {
-		mountPoint = path.Join(mountDir, mnt)
+		mountPoint = path.Join(d.mountPath, mnt)
 		if err := d.dir.MakeDir(mountPoint, 0755); err != nil {
 			return fmt.Errorf("error creating mountpoint %s: %s", mountPoint, err)
 		}
@@ -335,7 +335,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 		}
 
 		connStr = CephConnStr(v.Servers, v.RemotePath)
-		mountPoint = path.Join(mountDir, mnt)
+		mountPoint = path.Join(d.mountPath, mnt)
 		if err = d.mnt.Mount(connStr, mountPoint, "ceph", opts); err != nil {
 			return fmt.Errorf("error mounting: %s", err)
 		}
@@ -403,6 +403,7 @@ func newDriver(db *bolt.DB) driver {
 		configPath:  defaultConfigPath,
 		clientName:  EnvOrDefault("CLIENT_NAME", defaultClientName),
 		clusterName: EnvOrDefault("CLUSTER_NAME", defaultClusterName),
+		mountPath:   EnvOrDefault("VOLUME_MOUNT_ROOT", plugin.DefaultDockerRootDirectory),
 		servers:     servers,
 		mnt:         fsMounter{},
 		dir:         osDirectoryMaker{},

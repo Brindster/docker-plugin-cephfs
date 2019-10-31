@@ -337,10 +337,14 @@ func TestDriver_Mount(t *testing.T) {
 	db := genMockDb()
 	defer must(db.Close)
 
+	mountRoot, remove := prepareTempDir()
+	defer must(remove)
+
 	drv := driver{
 		configPath:  defaultConfigPath,
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
+		mountPath:   mountRoot,
 		servers:     []string{"localhost"},
 		mnt:         &mockMounter{},
 		dir:         &osDirectoryMaker{},
@@ -360,16 +364,13 @@ func TestDriver_Mount(t *testing.T) {
 	}
 	must(func() error { return prepareMockData(drv.DB, []volume{vol}) })
 
-	mountDir = path.Join(os.TempDir(), "docker-plugin-cephfs_test_mnt")
-	defer func() { mountDir = plugin.DefaultDockerRootDirectory }()
-
 	got, err := drv.Mount(&plugin.MountRequest{Name: "test.1", ID: "624F80C6-F050-42BF-8B02-387AA892782F"})
 	if err != nil {
 		t.Errorf("Mount() error = %s, wanted nil", err)
 		return
 	}
 
-	want := &plugin.MountResponse{Mountpoint: path.Join(mountDir, "624F80C6-F050-42BF-8B02-387AA892782F")}
+	want := &plugin.MountResponse{Mountpoint: path.Join(mountRoot, "624F80C6-F050-42BF-8B02-387AA892782F")}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Mount() got = %v, want %v", got, want)
 	}
@@ -555,6 +556,7 @@ func TestDriver_mountVolume(t *testing.T) {
 		configPath:  defaultConfigPath,
 		clientName:  defaultClientName,
 		clusterName: defaultClusterName,
+		mountPath:   plugin.DefaultDockerRootDirectory,
 		servers:     []string{"localhost"},
 		dir:         &dir,
 		mnt:         &mnt,
@@ -616,7 +618,12 @@ func TestDriver_mountVolume_alreadyConnected(t *testing.T) {
 func TestDriver_mountVolume_withRemotePath(t *testing.T) {
 	mnt := mockMounter{}
 	dir := mockDirectoryMaker{MakeTempDirResponse: MakeTempDirResponse{"/tmp/docker-plugin-cephfs_mnt", nil}}
-	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+	drv := driver{
+		mountPath: plugin.DefaultDockerRootDirectory,
+		DB:        &bolt.DB{},
+		mnt:       &mnt,
+		dir:       &dir,
+	}
 
 	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
 	defer must(cleanup)
@@ -660,7 +667,12 @@ func TestDriver_mountVolume_withMountOpts(t *testing.T) {
 		string
 		error
 	}{"/tmp/docker-plugin-cephfs_mnt", nil}}
-	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+	drv := driver{
+		mountPath: plugin.DefaultDockerRootDirectory,
+		DB:        &bolt.DB{},
+		mnt:       &mnt,
+		dir:       &dir,
+	}
 
 	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
 	defer must(cleanup)
@@ -918,6 +930,16 @@ func prepareKeyring(data string) (string, func() error) {
 
 	cleanup := func() error { return os.Remove(f.Name()) }
 	return f.Name(), cleanup
+}
+
+func prepareTempDir() (string, func() error) {
+	f, err := ioutil.TempDir(os.TempDir(), "docker-plugin-cephfs_test_mnt")
+	if err != nil {
+		log.Fatalf("Could not create temp dir: %s", err)
+	}
+
+	cleanup := func() error { return os.RemoveAll(f) }
+	return f, cleanup
 }
 
 func must(fn func() error) {
