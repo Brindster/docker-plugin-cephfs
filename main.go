@@ -156,7 +156,16 @@ func (d driver) Remove(req *plugin.RemoveRequest) error {
 	d.Lock()
 	defer d.Unlock()
 
-	err := d.Update(func(tx *bolt.Tx) error {
+	vol, err := d.fetchVol(req.Name)
+	if err != nil {
+		return fmt.Errorf("could not read from db: %s", err)
+	}
+
+	if vol.MountPoint != "" {
+		return fmt.Errorf("volume is still mounted")
+	}
+
+	err = d.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket(volumeBucket)
 		return b.Delete([]byte(req.Name))
 	})
@@ -214,7 +223,15 @@ func (d driver) Unmount(req *plugin.UnmountRequest) error {
 		return fmt.Errorf("could not read from db: %s", err)
 	}
 
-	return vol.unmount()
+	if err = vol.unmount(); err != nil {
+		return fmt.Errorf("could not unmount vol: %s", err)
+	}
+
+	if err = d.saveVol(req.Name, *vol); err != nil {
+		return fmt.Errorf("could not update db: %s", err)
+	}
+
+	return nil
 }
 
 // Capabilities will return the capabilities of the driver

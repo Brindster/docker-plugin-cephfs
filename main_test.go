@@ -370,8 +370,6 @@ func TestDriver_Mount(t *testing.T) {
 	_, _ = f.Write([]byte("[client.admin]\nkey = ABC123"))
 	_ = f.Close()
 
-	f.Name()
-
 	vol := volume{
 		MountPoint: "",
 		CreatedAt:  "2019-01-01T01:01:01Z",
@@ -409,86 +407,130 @@ func TestDriver_Mount(t *testing.T) {
 	}
 }
 
-//func TestDriver_Path(t *testing.T) {
-//	type fields struct {
-//		configPath  string
-//		clientName  string
-//		clusterName string
-//		servers     []string
-//		DB          *bolt.DB
-//		RWMutex     sync.RWMutex
-//	}
-//	type args struct {
-//		req *plugin.PathRequest
-//	}
-//	tests := []struct {
-//		name    string
-//		fields  fields
-//		args    args
-//		want    *plugin.PathResponse
-//		wantErr bool
-//	}{
-//		// TODO: Add test cases.
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			d := driver{
-//				configPath:  tt.fields.configPath,
-//				clientName:  tt.fields.clientName,
-//				clusterName: tt.fields.clusterName,
-//				servers:     tt.fields.servers,
-//				DB:          tt.fields.DB,
-//				RWMutex:     tt.fields.RWMutex,
-//			}
-//			got, err := d.Path(tt.args.req)
-//			if (err != nil) != tt.wantErr {
-//				t.Errorf("Path() error = %v, wantErr %v", err, tt.wantErr)
-//				return
-//			}
-//			if !reflect.DeepEqual(got, tt.want) {
-//				t.Errorf("Path() got = %v, want %v", got, tt.want)
-//			}
-//		})
-//	}
-//}
-//
-//func TestDriver_Remove(t *testing.T) {
-//	type fields struct {
-//		configPath  string
-//		clientName  string
-//		clusterName string
-//		servers     []string
-//		DB          *bolt.DB
-//		RWMutex     sync.RWMutex
-//	}
-//	type args struct {
-//		req *plugin.RemoveRequest
-//	}
-//	tests := []struct {
-//		name    string
-//		fields  fields
-//		args    args
-//		wantErr bool
-//	}{
-//		// TODO: Add test cases.
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			d := driver{
-//				configPath:  tt.fields.configPath,
-//				clientName:  tt.fields.clientName,
-//				clusterName: tt.fields.clusterName,
-//				servers:     tt.fields.servers,
-//				DB:          tt.fields.DB,
-//				RWMutex:     tt.fields.RWMutex,
-//			}
-//			if err := d.Remove(tt.args.req); (err != nil) != tt.wantErr {
-//				t.Errorf("Remove() error = %v, wantErr %v", err, tt.wantErr)
-//			}
-//		})
-//	}
-//}
-//
+func TestDriver_Path(t *testing.T) {
+	db := genMockDb()
+	defer must(db.Close)
+	vols := []volume{
+		{
+			MountPoint: "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913",
+			CreatedAt:  "2019-01-01T01:01:01Z",
+			Status:     nil,
+		},
+		{
+			MountPoint: "",
+			CreatedAt:  "2019-02-02T02:02:02Z",
+			Status:     nil,
+		},
+	}
+	_ = db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(volumeBucket)
+		for id, v := range vols {
+			d, err := v.serialize()
+			if err != nil {
+				log.Fatalf("could not serialize volume: %s", err)
+			}
+			err = b.Put([]byte("test."+strconv.Itoa(id+1)), d)
+			if err != nil {
+				log.Fatalf("could not insert record: %s", err)
+			}
+		}
+		return nil
+	})
+
+	type args struct {
+		req *plugin.PathRequest
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *plugin.PathResponse
+		wantErr bool
+	}{
+		{"mounted", args{&plugin.PathRequest{Name: "test.1"}}, &plugin.PathResponse{Mountpoint: "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913"}, false},
+		{"not mounted", args{&plugin.PathRequest{Name: "test.2"}}, &plugin.PathResponse{Mountpoint: ""}, false},
+		{"non existing", args{&plugin.PathRequest{Name: "test.3"}}, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := driver{DB: db}
+			got, err := d.Path(tt.args.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Path() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Path() got = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDriver_Remove(t *testing.T) {
+	db := genMockDb()
+	defer must(db.Close)
+
+	vols := []volume{
+		{
+			MountPoint: "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913",
+			CreatedAt:  "2019-01-01T01:01:01Z",
+			Status:     nil,
+		},
+		{
+			MountPoint: "",
+			CreatedAt:  "2019-02-02T02:02:02Z",
+			Status:     nil,
+		},
+	}
+	_ = db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(volumeBucket)
+		for id, v := range vols {
+			d, err := v.serialize()
+			if err != nil {
+				log.Fatalf("could not serialize volume: %s", err)
+			}
+			err = b.Put([]byte("test."+strconv.Itoa(id+1)), d)
+			if err != nil {
+				log.Fatalf("could not insert record: %s", err)
+			}
+		}
+		return nil
+	})
+
+	type args struct {
+		req *plugin.RemoveRequest
+	}
+	tests := []struct {
+		name    string
+		args    args
+		wantErr bool
+	}{
+		{"mounted", args{&plugin.RemoveRequest{Name: "test.1"}}, true},
+		{"not mounted", args{&plugin.RemoveRequest{Name: "test.2"}}, false},
+		{"non existing", args{&plugin.RemoveRequest{Name: "test.3"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := driver{DB: db}
+			err := d.Remove(tt.args.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Remove() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if err == nil {
+				_ = db.View(func(tx *bolt.Tx) error {
+					b := tx.Bucket(volumeBucket)
+					d := b.Get([]byte(tt.args.req.Name))
+					if d != nil {
+						t.Errorf("Remove() did not delete volume")
+					}
+
+					return nil
+				})
+			}
+		})
+	}
+}
+
 //func TestDriver_Unmount(t *testing.T) {
 //	type fields struct {
 //		configPath  string
