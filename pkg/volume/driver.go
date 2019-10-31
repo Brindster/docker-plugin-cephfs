@@ -60,10 +60,7 @@ const (
 	defaultClusterName = "ceph"
 )
 
-var (
-	socketName = "cephfs"
-	bucket     = []byte("volumes")
-)
+var bucket = []byte("volumes")
 
 // Create will create a new volume
 func (d Driver) Create(req *plugin.CreateRequest) error {
@@ -423,17 +420,4 @@ func NewDriver(db *bolt.DB) Driver {
 		DB:          db,
 	}
 	return driver
-}
-
-func main() {
-	// Open the my.db data file in your current directory.
-	// It will be created if it doesn't exist.
-	db, err := bolt.Open(socketName+".db", 0600, nil)
-	if err != nil {
-		log.Fatalf("Could not open the database: %s", err)
-	}
-
-	driver := NewDriver(db)
-	handler := plugin.NewHandler(driver)
-	log.Fatal(handler.ServeUnix(socketName, 1))
 }
