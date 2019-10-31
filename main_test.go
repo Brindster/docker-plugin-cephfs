@@ -348,16 +348,15 @@ func TestDriver_Mount(t *testing.T) {
 		RWMutex:     sync.RWMutex{},
 	}
 
-	f, _ := ioutil.TempFile("", "docker-plugin-cephfs_test.keyring")
-	_, _ = f.Write([]byte("[client.admin]\nkey = ABC123"))
-	_ = f.Close()
+	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
+	defer must(cleanup)
 
 	vol := volume{
 		MountPoint: "",
 		CreatedAt:  "2019-01-01T01:01:01Z",
 		Status:     nil,
 		ClientName: "admin",
-		Keyring:    f.Name(),
+		Keyring:    keyring,
 	}
 	must(func() error { return prepareMockData(drv.DB, []volume{vol}) })
 
@@ -549,6 +548,227 @@ func TestDriver_Unmount(t *testing.T) {
 	}
 }
 
+func TestDriver_mountVolume(t *testing.T) {
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{}
+	drv := driver{
+		configPath:  defaultConfigPath,
+		clientName:  defaultClientName,
+		clusterName: defaultClusterName,
+		servers:     []string{"localhost"},
+		dir:         &dir,
+		mnt:         &mnt,
+		DB:          &bolt.DB{},
+	}
+
+	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
+	defer must(cleanup)
+
+	vol := &volume{
+		ClientName: "admin",
+		Keyring:    keyring,
+		Servers:    []string{"localhost"},
+	}
+	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
+	if got != nil {
+		t.Errorf("mountVolume() error = %s, expected nil", got)
+		return
+	}
+
+	if !mnt.receivedCallWithArgs("Mount", "localhost:/", "/var/lib/docker-volumes/B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F", "ceph", "name=admin,secret=ABC123") {
+		t.Errorf("mountVolume() did not call mount with expected args")
+		return
+	}
+
+	if vol.MountPoint != "/var/lib/docker-volumes/B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F" {
+		t.Errorf("mountVolume() did update volume mount point")
+		return
+	}
+
+	if vol.Connections != 1 {
+		t.Errorf("mountVolume() did update volume connections")
+		return
+	}
+}
+
+func TestDriver_mountVolume_alreadyConnected(t *testing.T) {
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{}
+	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+	vol := &volume{Connections: 1}
+
+	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
+	if got != nil {
+		t.Errorf("mountVolume() error = %s, expected nil", got)
+		return
+	}
+
+	if mnt.receivedCall("mount") {
+		t.Errorf("mountVolume() unexpectedly called mount method")
+		return
+	}
+
+	if vol.Connections != 2 {
+		t.Errorf("mountVolume() did not increase connections on volume")
+	}
+}
+
+func TestDriver_mountVolume_withRemotePath(t *testing.T) {
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{MakeTempDirResponse: MakeTempDirResponse{"/tmp/docker-plugin-cephfs_mnt", nil}}
+	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
+	defer must(cleanup)
+
+	vol := &volume{
+		ClientName: "admin",
+		Keyring:    keyring,
+		Servers:    []string{"localhost"},
+		RemotePath: "/stack/service",
+	}
+
+	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
+	if got != nil {
+		t.Errorf("mountVolume() error = %s, expected nil", got)
+		return
+	}
+
+	if !mnt.receivedCallWithArgs("Mount", "localhost:/", "/tmp/docker-plugin-cephfs_mnt", "ceph", "name=admin,secret=ABC123") {
+		t.Errorf("mountVolume() did not call Mount with expected args")
+		return
+	}
+
+	if !dir.receivedCallWithArgs("MakeDir", "/tmp/docker-plugin-cephfs_mnt/stack/service", os.FileMode(0755)) {
+		t.Errorf("mountVolume() did not call MakeDir with expected args")
+		return
+	}
+
+	if !mnt.receivedCallWithArgs("Unmount", "/tmp/docker-plugin-cephfs_mnt") {
+		t.Errorf("mountVolume() did not call Unmount with expected args")
+		return
+	}
+
+	if !mnt.receivedCallWithArgs("Mount", "localhost:/stack/service", "/var/lib/docker-volumes/B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F", "ceph", "name=admin,secret=ABC123") {
+		t.Errorf("mountVolume() did not call Mount with expected args")
+	}
+}
+
+func TestDriver_mountVolume_withMountOpts(t *testing.T) {
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{MakeTempDirResponse: struct {
+		string
+		error
+	}{"/tmp/docker-plugin-cephfs_mnt", nil}}
+	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
+	defer must(cleanup)
+
+	vol := &volume{
+		ClientName: "admin",
+		Keyring:    keyring,
+		Servers:    []string{"localhost"},
+		MountOpts:  "mds_namespace=staging",
+	}
+
+	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
+	if got != nil {
+		t.Errorf("mountVolume() error = %s, expected nil", got)
+		return
+	}
+
+	if !mnt.receivedCallWithArgs("Mount", "localhost:/", "/var/lib/docker-volumes/B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F", "ceph", "name=admin,secret=ABC123,mds_namespace=staging") {
+		t.Errorf("mountVolume() did not call Mount with expected args")
+		return
+	}
+}
+
+func TestDriver_mountVolume_tempDirFailure(t *testing.T) {
+	want := errors.New("bad permissions")
+
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{MakeTempDirResponse: MakeTempDirResponse{"", want}}
+	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	vol := &volume{RemotePath: "Banana"}
+
+	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
+	if got == nil || !strings.Contains(got.Error(), want.Error()) {
+		t.Errorf("mountVolume() error = %s, expected %s", got, want)
+		return
+	}
+}
+
+func TestDriver_mountVolume_makeDirFailure(t *testing.T) {
+	want := errors.New("file exists")
+
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{MakeDirResponse: want}
+	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	vol := &volume{}
+
+	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
+	if got == nil || !strings.Contains(got.Error(), want.Error()) {
+		t.Errorf("mountVolume() error = %s, expected %s", got, want)
+		return
+	}
+}
+
+func TestDriver_mountVolume_keyringDoesntExist(t *testing.T) {
+	want := errors.New("keyring not found")
+
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{}
+	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	vol := &volume{Keyring: "/not-a-real-file"}
+
+	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
+	if got == nil || !strings.Contains(got.Error(), want.Error()) {
+		t.Errorf("mountVolume() error = %s, expected %s", got, want)
+		return
+	}
+}
+
+func TestDriver_mountVolume_keyringMismatch(t *testing.T) {
+	want := errors.New("keyring did not contain client details")
+
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{}
+	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	keyring, cleanup := prepareKeyring("[client.user]\nkey = ABC123")
+	defer must(cleanup)
+
+	vol := &volume{ClientName: "docker", Keyring: keyring}
+
+	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
+	if got == nil || !strings.Contains(got.Error(), want.Error()) {
+		t.Errorf("mountVolume() error = %s, expected %s", got, want)
+		return
+	}
+}
+
+func TestDriver_mountVolume_keyringMissingKey(t *testing.T) {
+	want := errors.New("keyring did not contain key")
+
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{}
+	drv := driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	keyring, cleanup := prepareKeyring("[client.user]\nods = 'allow rw'")
+	defer must(cleanup)
+
+	vol := &volume{ClientName: "user", Keyring: keyring}
+
+	got := drv.mountVolume(vol, "B1BF0ABD-85A6-4004-A10F-326D8F0C4C6F")
+	if got == nil || !strings.Contains(got.Error(), want.Error()) {
+		t.Errorf("mountVolume() error = %s, expected %s", got, want)
+		return
+	}
+}
 
 type call struct {
 	method string
@@ -558,6 +778,8 @@ type call struct {
 type mockMounter struct {
 	MountResponse   error
 	UnmountResponse error
+
+	calls []call
 }
 
 func (m *mockMounter) Mount(source string, target string, fstype string, data string) error {
@@ -580,9 +802,59 @@ func (m mockMounter) receivedCall(method string) bool {
 	return false
 }
 
-func (m mockMounter) receivedCallWithArgs(method string, args ...string) bool {
+func (m mockMounter) receivedCallWithArgs(method string, args ...interface{}) bool {
+	search := call{method: method, args: args}
 	for _, call := range m.calls {
-		if method == call.method && reflect.DeepEqual(args, call.args) {
+		if reflect.DeepEqual(search, call) {
+			return true
+		}
+	}
+
+	return false
+}
+
+type MakeTempDirResponse struct {
+	string
+	error
+}
+
+type mockDirectoryMaker struct {
+	MakeTempDirResponse MakeTempDirResponse
+	MakeDirResponse     error
+	IsDirResponse       bool
+
+	calls []call
+}
+
+func (m *mockDirectoryMaker) IsDir(dir string) bool {
+	m.calls = append(m.calls, call{"IsDir", []interface{}{dir}})
+	return m.IsDirResponse
+}
+
+func (m *mockDirectoryMaker) MakeDir(dir string, mode os.FileMode) error {
+	m.calls = append(m.calls, call{"MakeDir", []interface{}{dir, mode}})
+	return m.MakeDirResponse
+}
+
+func (m *mockDirectoryMaker) MakeTempDir() (string, error) {
+	m.calls = append(m.calls, call{"MakeTempDir", []interface{}{}})
+	return m.MakeTempDirResponse.string, m.MakeTempDirResponse.error
+}
+
+func (m mockDirectoryMaker) receivedCall(method string) bool {
+	for _, call := range m.calls {
+		if method == call.method {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (m mockDirectoryMaker) receivedCallWithArgs(method string, args ...interface{}) bool {
+	search := call{method: method, args: args}
+	for _, call := range m.calls {
+		if reflect.DeepEqual(search, call) {
 			return true
 		}
 	}
@@ -626,6 +898,26 @@ func prepareMockData(db *bolt.DB, vols []volume) error {
 		}
 		return nil
 	})
+}
+
+func prepareKeyring(data string) (string, func() error) {
+	f, err := ioutil.TempFile(os.TempDir(), "docker-plugin-cephfs_test.keyring")
+	if err != nil {
+		log.Fatalf("Could not prepare test keychain file: %s", err)
+	}
+
+	_, err = f.Write([]byte(data))
+	if err != nil {
+		log.Fatalf("Could not write test keychain data: %s", err)
+	}
+
+	err = f.Close()
+	if err != nil {
+		log.Fatalf("Could not close temporary keychain file: %s", err)
+	}
+
+	cleanup := func() error { return os.Remove(f.Name()) }
+	return f.Name(), cleanup
 }
 
 func must(fn func() error) {

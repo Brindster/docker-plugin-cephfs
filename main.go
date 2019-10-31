@@ -341,7 +341,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 	}
 
 	connStr := connstr(v.Servers, "/")
-	if err = d.mnt.Mount(connStr, mountPoint, "ceph", "-o "+opts); err != nil {
+	if err = d.mnt.Mount(connStr, mountPoint, "ceph", opts); err != nil {
 		return fmt.Errorf("error mounting: %s", err)
 	}
 
@@ -360,7 +360,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 
 		connStr = connstr(v.Servers, v.RemotePath)
 		mountPoint = path.Join(mountDir, mnt)
-		if err = d.mnt.Mount(connStr, mountPoint, "ceph", "-o "+opts); err != nil {
+		if err = d.mnt.Mount(connStr, mountPoint, "ceph", opts); err != nil {
 			return fmt.Errorf("error mounting: %s", err)
 		}
 	}
