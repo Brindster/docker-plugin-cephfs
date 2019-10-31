@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"github.com/boltdb/bolt"
 	plugin "github.com/docker/go-plugins-helpers/volume"
+	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"reflect"
 	"strconv"
 	"strings"
@@ -351,51 +353,61 @@ func TestDriver_List(t *testing.T) {
 	}
 }
 
-//func TestDriver_Mount(t *testing.T) {
-//	db := genMockDb()
-//	defer must(db.Close)
-//
-//	drv := driver{
-//		configPath:  defaultConfigPath,
-//		clientName:  defaultClientName,
-//		clusterName: defaultClusterName,
-//		servers:     []string{"localhost"},
-//		DB:          db,
-//		RWMutex:     sync.RWMutex{},
-//	}
-//
-//	vol := volume{
-//		MountPoint: "",
-//		CreatedAt:  "2019-01-01T01:01:01Z",
-//		Status:     nil,
-//	}
-//	_ = drv.DB.Update(func(tx *bolt.Tx) error {
-//		b := tx.Bucket(volumeBucket)
-//		d, err := vol.serialize()
-//		if err != nil {
-//			log.Fatalf("could not serialize volume: %s", err)
-//		}
-//		err = b.Put([]byte("test.1"), d)
-//		if err != nil {
-//			log.Fatalf("could not insert record: %s", err)
-//		}
-//		return nil
-//	})
-//
-//	execCommand = mockExecCommand("", 0)
-//	defer revertMockExecCommand()
-//
-//	got, err := drv.Mount(&plugin.MountRequest{Name: "test.1", ID: "624F80C6-F050-42BF-8B02-387AA892782F"})
-//	if err != nil {
-//		t.Errorf("Mount() error = %s, wanted nil", err)
-//		return
-//	}
-//
-//	want := &plugin.MountResponse{Mountpoint: "/var/lib/docker-volumes/624F80C6-F050-42BF-8B02-387AA892782F"}
-//	if !reflect.DeepEqual(got, want) {
-//		t.Errorf("Mount() got = %v, want %v", got, want)
-//	}
-//}
+func TestDriver_Mount(t *testing.T) {
+	db := genMockDb()
+	defer must(db.Close)
+
+	drv := driver{
+		configPath:  defaultConfigPath,
+		clientName:  defaultClientName,
+		clusterName: defaultClusterName,
+		servers:     []string{"localhost"},
+		DB:          db,
+		RWMutex:     sync.RWMutex{},
+	}
+
+	f, _ := ioutil.TempFile("", "docker-plugin-cephfs_test.keyring")
+	_, _ = f.Write([]byte("[client.admin]\nkey = ABC123"))
+	_ = f.Close()
+
+	f.Name()
+
+	vol := volume{
+		MountPoint: "",
+		CreatedAt:  "2019-01-01T01:01:01Z",
+		Status:     nil,
+		ClientName: "admin",
+		Keyring:    f.Name(),
+	}
+	_ = drv.DB.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(volumeBucket)
+		d, err := vol.serialize()
+		if err != nil {
+			log.Fatalf("could not serialize volume: %s", err)
+		}
+		err = b.Put([]byte("test.1"), d)
+		if err != nil {
+			log.Fatalf("could not insert record: %s", err)
+		}
+		return nil
+	})
+
+	execCommand = mockExecCommand("", 0)
+	defer revertMockExecCommand()
+	mountDir = path.Join(os.TempDir(), "docker-plugin-cephfs_test_mnt")
+	defer func() { mountDir = plugin.DefaultDockerRootDirectory }()
+
+	got, err := drv.Mount(&plugin.MountRequest{Name: "test.1", ID: "624F80C6-F050-42BF-8B02-387AA892782F"})
+	if err != nil {
+		t.Errorf("Mount() error = %s, wanted nil", err)
+		return
+	}
+
+	want := &plugin.MountResponse{Mountpoint: path.Join(mountDir, "624F80C6-F050-42BF-8B02-387AA892782F")}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Mount() got = %v, want %v", got, want)
+	}
+}
 
 //func TestDriver_Path(t *testing.T) {
 //	type fields struct {

@@ -49,6 +49,8 @@ const (
 )
 
 var (
+	execCommand  = exec.Command
+	mountDir     = plugin.DefaultDockerRootDirectory
 	socketName   = "cephfs"
 	volumeBucket = []byte("volumes")
 )
@@ -261,7 +263,7 @@ func (v *volume) mount(mnt string) error {
 		}
 	}
 
-	mountPoint := path.Join(plugin.DefaultDockerRootDirectory, mnt)
+	mountPoint := path.Join(mountDir, mnt)
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
 		return fmt.Errorf("error creating mountpoint %s: %s", mountPoint, err)
 	}
@@ -277,7 +279,7 @@ func (v *volume) mount(mnt string) error {
 	}
 
 	connStr := connstr(v.Servers, v.RemotePath)
-	cmd := exec.Command("mount", "-t", "ceph", "-o", opts, connStr, mountPoint)
+	cmd := execCommand("mount", "-t", "ceph", "-o", opts, connStr, mountPoint)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("error mounting: %s\ncommand output: %s", err, out)
 	}
@@ -304,7 +306,7 @@ func (v volume) createRemoteMount() error {
 	}
 
 	connStr := connstr(v.Servers, "")
-	cmd := exec.Command("mount", "-t", "ceph", "-o", opts, connStr, mountPoint)
+	cmd := execCommand("mount", "-t", "ceph", "-o", opts, connStr, mountPoint)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("error mounting: %s\ncommand output: %s", err, out)
 	}
