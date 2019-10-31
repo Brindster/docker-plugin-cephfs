@@ -5,7 +5,7 @@ RUN apk add --no-cache --virtual .deps build-base ceph-dev
 WORKDIR /go/src/app
 COPY . .
 
-RUN go install --ldflags '-extldflags "-static"'
+RUN go install --ldflags '-extldflags "-static"' ./cmd/docker-plugin-cephfs
 CMD ["/go/bin/docker-plugin-cephfs"]
 
 FROM alpine
