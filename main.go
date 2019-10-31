@@ -54,6 +54,7 @@ type fsMounter struct{}
 type directoryMaker interface {
 	IsDir(dir string) bool
 	MakeDir(dir string, mode os.FileMode) error
+	MakeTempDir() (string, error)
 }
 
 type osDirectoryMaker struct{}
@@ -69,6 +70,10 @@ func (o osDirectoryMaker) IsDir(dir string) bool {
 
 func (o osDirectoryMaker) MakeDir(dir string, mode os.FileMode) error {
 	return os.MkdirAll(dir, mode)
+}
+
+func (o osDirectoryMaker) MakeTempDir() (string, error) {
+	return ioutil.TempDir("", "docker-plugin-cephfs_mnt_")
 }
 
 const (
@@ -312,10 +317,12 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 	}
 
 	if v.RemotePath != "" && v.RemotePath != "/" {
-		mountPoint, err = ioutil.TempDir("", "docker-plugin-cephfs_mnt_")
+		mountPoint, err = d.dir.MakeTempDir()
 		if err != nil {
 			return fmt.Errorf("error creating temporary mountpoint: %s", err)
 		}
+
+		defer os.RemoveAll(mountPoint)
 	} else {
 		mountPoint = path.Join(mountDir, mnt)
 		if err := d.dir.MakeDir(mountPoint, 0755); err != nil {
