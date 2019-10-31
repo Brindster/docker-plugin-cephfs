@@ -235,20 +235,8 @@ func TestDriver_Get(t *testing.T) {
 			Status:     nil,
 		},
 	}
-	_ = drv.DB.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
-		for id, v := range vols {
-			d, err := v.serialize()
-			if err != nil {
-				log.Fatalf("could not serialize volume: %s", err)
-			}
-			err = b.Put([]byte("test."+strconv.Itoa(id+1)), d)
-			if err != nil {
-				log.Fatalf("could not insert record: %s", err)
-			}
-		}
-		return nil
-	})
+	must(func() error { return prepareMockData(drv.DB, vols) })
+
 	tests := []struct {
 		name    string
 		fields  fields
@@ -319,20 +307,7 @@ func TestDriver_List(t *testing.T) {
 			Status:     nil,
 		},
 	}
-	_ = drv.DB.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
-		for id, v := range vols {
-			d, err := v.serialize()
-			if err != nil {
-				log.Fatalf("could not serialize volume: %s", err)
-			}
-			err = b.Put([]byte("test."+strconv.Itoa(id+1)), d)
-			if err != nil {
-				log.Fatalf("could not insert record: %s", err)
-			}
-		}
-		return nil
-	})
+	must(func() error { return prepareMockData(drv.DB, vols) })
 
 	got, err := drv.List()
 	if err != nil {
@@ -381,18 +356,7 @@ func TestDriver_Mount(t *testing.T) {
 		ClientName: "admin",
 		Keyring:    f.Name(),
 	}
-	_ = drv.DB.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
-		d, err := vol.serialize()
-		if err != nil {
-			log.Fatalf("could not serialize volume: %s", err)
-		}
-		err = b.Put([]byte("test.1"), d)
-		if err != nil {
-			log.Fatalf("could not insert record: %s", err)
-		}
-		return nil
-	})
+	must(func() error { return prepareMockData(drv.DB, []volume{vol}) })
 
 	mountDir = path.Join(os.TempDir(), "docker-plugin-cephfs_test_mnt")
 	defer func() { mountDir = plugin.DefaultDockerRootDirectory }()
@@ -424,20 +388,7 @@ func TestDriver_Path(t *testing.T) {
 			Status:     nil,
 		},
 	}
-	_ = db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
-		for id, v := range vols {
-			d, err := v.serialize()
-			if err != nil {
-				log.Fatalf("could not serialize volume: %s", err)
-			}
-			err = b.Put([]byte("test."+strconv.Itoa(id+1)), d)
-			if err != nil {
-				log.Fatalf("could not insert record: %s", err)
-			}
-		}
-		return nil
-	})
+	must(func() error { return prepareMockData(db, vols) })
 
 	type args struct {
 		req *plugin.PathRequest
@@ -483,20 +434,7 @@ func TestDriver_Remove(t *testing.T) {
 			Status:     nil,
 		},
 	}
-	_ = db.Update(func(tx *bolt.Tx) error {
-		b := tx.Bucket(volumeBucket)
-		for id, v := range vols {
-			d, err := v.serialize()
-			if err != nil {
-				log.Fatalf("could not serialize volume: %s", err)
-			}
-			err = b.Put([]byte("test."+strconv.Itoa(id+1)), d)
-			if err != nil {
-				log.Fatalf("could not insert record: %s", err)
-			}
-		}
-		return nil
-	})
+	must(func() error { return prepareMockData(db, vols) })
 
 	type args struct {
 		req *plugin.RemoveRequest
@@ -990,6 +928,23 @@ func genMockDb() *bolt.DB {
 	}
 
 	return db
+}
+
+func prepareMockData(db *bolt.DB, vols []volume) error {
+	return db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(volumeBucket)
+		for id, v := range vols {
+			d, err := v.serialize()
+			if err != nil {
+				return fmt.Errorf("could not serialize volume: %s", err)
+			}
+			err = b.Put([]byte("test."+strconv.Itoa(id+1)), d)
+			if err != nil {
+				return fmt.Errorf("could not insert record: %s", err)
+			}
+		}
+		return nil
+	})
 }
 
 func must(fn func() error) {
