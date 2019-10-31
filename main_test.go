@@ -1,13 +1,13 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"github.com/boltdb/bolt"
 	plugin "github.com/docker/go-plugins-helpers/volume"
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"reflect"
 	"strconv"
@@ -473,43 +473,79 @@ func TestDriver_Remove(t *testing.T) {
 	}
 }
 
-//func TestDriver_Unmount(t *testing.T) {
-//	type fields struct {
-//		configPath  string
-//		clientName  string
-//		clusterName string
-//		servers     []string
-//		DB          *bolt.DB
-//		RWMutex     sync.RWMutex
-//	}
-//	type args struct {
-//		req *plugin.UnmountRequest
-//	}
-//	tests := []struct {
-//		name    string
-//		fields  fields
-//		args    args
-//		wantErr bool
-//	}{
-//		// TODO: Add test cases.
-//	}
-//	for _, tt := range tests {
-//		t.Run(tt.name, func(t *testing.T) {
-//			d := driver{
-//				configPath:  tt.fields.configPath,
-//				clientName:  tt.fields.clientName,
-//				clusterName: tt.fields.clusterName,
-//				servers:     tt.fields.servers,
-//				DB:          tt.fields.DB,
-//				RWMutex:     tt.fields.RWMutex,
-//			}
-//			if err := d.Unmount(tt.args.req); (err != nil) != tt.wantErr {
-//				t.Errorf("Unmount() error = %v, wantErr %v", err, tt.wantErr)
-//			}
-//		})
-//	}
-//}
-//
+func TestDriver_Unmount(t *testing.T) {
+	db := genMockDb()
+	defer must(db.Close)
+
+	vols := []volume{
+		{
+			MountPoint:  "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913",
+			CreatedAt:   "2019-01-01T01:01:01Z",
+			Status:      nil,
+			Connections: 1,
+		},
+		{
+			MountPoint:  "/var/lib/docker-volumes/D4BE6F35-11E8-4735-A330-3BA36B5B9913",
+			CreatedAt:   "2019-02-02T02:02:02Z",
+			Status:      nil,
+			Connections: 2,
+		},
+		{
+			MountPoint: "",
+			CreatedAt:  "2019-02-02T02:02:02Z",
+			Status:     nil,
+		},
+	}
+	must(func() error { return prepareMockData(db, vols) })
+
+	type args struct {
+		req *plugin.UnmountRequest
+	}
+	tests := []struct {
+		name     string
+		args     args
+		umntResp error
+		wantErr  bool
+	}{
+		{"mounted", args{&plugin.UnmountRequest{Name: "test.1"}}, nil, false},
+		{"mounted twice", args{&plugin.UnmountRequest{Name: "test.2"}}, nil, false},
+		{"non mounted", args{&plugin.UnmountRequest{Name: "test.3"}}, errors.New("not mounted"), true},
+		{"non existing", args{&plugin.UnmountRequest{Name: "test.4"}}, nil, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := driver{mnt: mockMounter{UnmountResponse: tt.umntResp}, DB: db}
+			err := d.Unmount(tt.args.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Unmount() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+
+			if err != nil && !tt.wantErr {
+				_ = db.View(func(tx *bolt.Tx) error {
+					b := tx.Bucket(volumeBucket)
+					data := b.Get([]byte(tt.args.req.Name))
+					if data == nil {
+						t.Errorf("Unmount() volume is removed")
+						return nil
+					}
+					vol, err := unserialize(data)
+					if err != nil {
+						t.Errorf("Unmount() volume could not be unserialized")
+						return nil
+					}
+
+					if vol.MountPoint != "" {
+						t.Errorf("Unmount() volume remains mounted")
+					}
+
+					return nil
+				})
+			}
+		})
+	}
+}
+
 //func TestDriver_fetchVol(t *testing.T) {
 //	type fields struct {
 //		configPath  string
