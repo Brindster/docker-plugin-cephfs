@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/gob"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
@@ -49,31 +48,10 @@ type mounter interface {
 	Unmount(target string) error
 }
 
-type fsMounter struct{}
-
 type directoryMaker interface {
 	IsDir(dir string) bool
 	MakeDir(dir string, mode os.FileMode) error
 	MakeTempDir() (string, error)
-}
-
-type osDirectoryMaker struct{}
-
-func (o osDirectoryMaker) IsDir(dir string) bool {
-	stat, err := os.Stat(dir)
-	if err != nil {
-		return false
-	}
-
-	return stat.IsDir()
-}
-
-func (o osDirectoryMaker) MakeDir(dir string, mode os.FileMode) error {
-	return os.MkdirAll(dir, mode)
-}
-
-func (o osDirectoryMaker) MakeTempDir() (string, error) {
-	return ioutil.TempDir("", "docker-plugin-cephfs_mnt_")
 }
 
 const (
