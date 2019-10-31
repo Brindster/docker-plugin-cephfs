@@ -129,6 +129,7 @@ func TestDriver_Create(t *testing.T) {
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			RemotePath:  "test.1",
 			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
 		{"with client_name", drv, args{&plugin.CreateRequest{Name: "test.2", Options: map[string]string{"client_name": "user"}}}, false, &volume{
@@ -136,6 +137,7 @@ func TestDriver_Create(t *testing.T) {
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			RemotePath:  "test.2",
 			Keyring:     "/etc/ceph/ceph.client.user.keyring",
 		}},
 		{"with mount_opts", drv, args{&plugin.CreateRequest{Name: "test.3", Options: map[string]string{"mount_opts": "name=user,secret=abc"}}}, false, &volume{
@@ -144,6 +146,7 @@ func TestDriver_Create(t *testing.T) {
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			RemotePath:  "test.3",
 			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
 		{"with remote_path", drv, args{&plugin.CreateRequest{Name: "test.4", Options: map[string]string{"remote_path": "/data/mnt"}}}, false, &volume{
@@ -159,6 +162,7 @@ func TestDriver_Create(t *testing.T) {
 			Servers:     []string{"monitor1:6798", "monitor2:6798"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			RemotePath:  "test.5",
 			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
 		{"duplicate name", drv, args{&plugin.CreateRequest{Name: "test.1"}}, false, &volume{
@@ -166,6 +170,7 @@ func TestDriver_Create(t *testing.T) {
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			RemotePath:  "test.1",
 			Keyring:     "/etc/ceph/ceph.client.admin.keyring",
 		}},
 		{"with keyring", drv, args{&plugin.CreateRequest{Name: "test.6", Options: map[string]string{"keyring": "/etc/ceph/test.keyring"}}}, false, &volume{
@@ -173,6 +178,7 @@ func TestDriver_Create(t *testing.T) {
 			Servers:     []string{"localhost"},
 			ClusterName: defaultClusterName,
 			ConfigPath:  defaultConfigPath,
+			RemotePath:  "test.6",
 			Keyring:     "/etc/ceph/test.keyring",
 		}},
 	}

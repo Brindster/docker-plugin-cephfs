@@ -79,6 +79,7 @@ func (d driver) Create(req *plugin.CreateRequest) error {
 		ConfigPath:  d.configPath,
 		Keyring:     fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.configPath, "/"), d.clusterName, d.clientName),
 		Connections: 0,
+		RemotePath:  req.Name,
 	}
 
 	for key, val := range req.Options {
