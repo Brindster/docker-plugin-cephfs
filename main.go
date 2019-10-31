@@ -424,9 +424,7 @@ func connstr(srvs []string, path string) string {
 		}
 	}
 
-	if path == "" {
-		path = "/"
-	}
+	path = "/" + strings.TrimLeft(path, "/")
 
 	return fmt.Sprintf("%s:%s", conn, path)
 }
