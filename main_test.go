@@ -837,34 +837,6 @@ func (m mockMounter) Unmount(target string) error {
 	return m.UnmountResponse
 }
 
-func mockExecCommand(out string, exit int) func(string, ...string) *exec.Cmd {
-	return func(command string, args ...string) *exec.Cmd {
-		cs := []string{"-test.run=TestExecCommandHelper", "--", command}
-		cs = append(cs, args...)
-		cmd := exec.Command(os.Args[0], cs...)
-		cmd.Env = []string{
-			"GO_WANT_HELPER_PROCESS=1",
-			"GO_HELPER_OUTPUT=\"" + out + "\"",
-			"GO_HELPER_EXIT=" + strconv.Itoa(exit),
-		}
-		return cmd
-	}
-}
-
-func revertMockExecCommand() {
-	execCommand = exec.Command
-}
-
-func TestExecCommandHelper(t *testing.T) {
-	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
-		return
-	}
-
-	ec, _ := strconv.Atoi(os.Getenv("GO_HELPER_EXIT"))
-	_, _ = fmt.Fprintf(os.Stdout, os.Getenv("GO_HELPER_OUTPUT"))
-	os.Exit(ec)
-}
-
 func volCompare(want, got *volume) bool {
 	if (want != nil) != (got != nil) {
 		return false

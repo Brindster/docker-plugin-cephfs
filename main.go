@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"strings"
 	"sync"
@@ -56,7 +55,6 @@ const (
 )
 
 var (
-	execCommand  = exec.Command
 	mountDir     = plugin.DefaultDockerRootDirectory
 	socketName   = "cephfs"
 	volumeBucket = []byte("volumes")
