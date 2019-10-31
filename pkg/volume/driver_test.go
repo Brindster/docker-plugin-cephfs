@@ -361,24 +361,52 @@ func TestDriver_Mount(t *testing.T) {
 	keyring, cleanup := prepareKeyring("[client.admin]\nkey = ABC123")
 	defer must(cleanup)
 
-	vol := Volume{
-		MountPoint: "",
-		CreatedAt:  "2019-01-01T01:01:01Z",
-		Status:     nil,
-		ClientName: "admin",
-		Keyring:    keyring,
+	vols := []Volume{
+		{
+			MountPoint: "",
+			CreatedAt:  "2019-01-01T01:01:01Z",
+			Status:     nil,
+			ClientName: "admin",
+			Keyring:    keyring,
+		},
+		{
+			MountPoint: "",
+			CreatedAt:  "2019-01-01T01:01:01Z",
+			Status:     nil,
+			ClientName: "admin",
+			Keyring:    keyring,
+		},
 	}
-	must(func() error { return prepareMockData(db, []Volume{vol}) })
+	must(func() error { return prepareMockData(db, vols) })
 
-	got, err := drv.Mount(&plugin.MountRequest{Name: "test.1", ID: "624F80C6-F050-42BF-8B02-387AA892782F"})
-	if err != nil {
-		t.Errorf("Mount() error = %s, wanted nil", err)
-		return
+	type args struct {
+		req  *plugin.MountRequest
+		mrsp error
+	}
+	tests := []struct {
+		name    string
+		args    args
+		want    *plugin.MountResponse
+		wantErr bool
+	}{
+		{"mount volume", args{&plugin.MountRequest{Name: "test.1", ID: "624F80C6-F050-42BF-8B02-387AA892782F"}, nil}, &plugin.MountResponse{Mountpoint: path.Join(mountRoot, "624F80C6-F050-42BF-8B02-387AA892782F")}, false},
+		{"mount fail", args{&plugin.MountRequest{Name: "test.2", ID: "624F80C6-F050-42BF-8B02-387AA892782F"}, errors.New("failed mounting")}, nil, true},
+		{"volume not found", args{&plugin.MountRequest{Name: "test.3", ID: ""}, nil}, nil, true},
 	}
 
-	want := &plugin.MountResponse{Mountpoint: path.Join(mountRoot, "624F80C6-F050-42BF-8B02-387AA892782F")}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("Mount() got = %v, want %v", got, want)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			drv.mnt = &mockMounter{MountResponse: tt.args.mrsp}
+
+			got, err := drv.Mount(tt.args.req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Mount() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("Mount() got = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
