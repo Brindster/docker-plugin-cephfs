@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
+	"strings"
 )
 
 type fsMounter struct{}
@@ -27,4 +29,31 @@ func (o osDirectoryMaker) MakeDir(dir string, mode os.FileMode) error {
 // MakeTempDir will create a temporary directory
 func (o osDirectoryMaker) MakeTempDir() (string, error) {
 	return ioutil.TempDir(os.TempDir(), "docker-plugin-cephfs_mnt_")
+}
+
+// CephConnStr will return the ceph connection string for a list of servers and remote path
+func CephConnStr(srvs []string, path string) string {
+	l := len(srvs)
+
+	var conn string
+	for id, server := range srvs {
+		conn += server
+
+		if id != l-1 {
+			conn += ","
+		}
+	}
+
+	path = "/" + strings.TrimLeft(path, "/")
+
+	return fmt.Sprintf("%s:%s", conn, path)
+}
+
+// EnvOrDefault will return the environment variable, or a default if it is not set
+func EnvOrDefault(param, def string) string {
+	if env, ok := os.LookupEnv(param); ok {
+		return env
+	}
+
+	return def
 }

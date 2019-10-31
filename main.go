@@ -318,7 +318,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 		opts = opts + "," + v.MountOpts
 	}
 
-	connStr := connstr(v.Servers, "/")
+	connStr := CephConnStr(v.Servers, "/")
 	if err = d.mnt.Mount(connStr, mountPoint, "ceph", opts); err != nil {
 		return fmt.Errorf("error mounting: %s", err)
 	}
@@ -336,7 +336,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 			return fmt.Errorf("failed unmounting volume: %s", err)
 		}
 
-		connStr = connstr(v.Servers, v.RemotePath)
+		connStr = CephConnStr(v.Servers, v.RemotePath)
 		mountPoint = path.Join(mountDir, mnt)
 		if err = d.mnt.Mount(connStr, mountPoint, "ceph", opts); err != nil {
 			return fmt.Errorf("error mounting: %s", err)
@@ -412,31 +412,6 @@ func unserialize(in []byte) (*volume, error) {
 	return out, nil
 }
 
-func connstr(srvs []string, path string) string {
-	l := len(srvs)
-
-	var conn string
-	for id, server := range srvs {
-		conn += server
-
-		if id != l-1 {
-			conn += ","
-		}
-	}
-
-	path = "/" + strings.TrimLeft(path, "/")
-
-	return fmt.Sprintf("%s:%s", conn, path)
-}
-
-func envOrDefault(param, def string) string {
-	if env, ok := os.LookupEnv(param); ok {
-		return env
-	}
-
-	return def
-}
-
 func newDriver(db *bolt.DB) driver {
 	err := db.Update(func(tx *bolt.Tx) error {
 		_, err := tx.CreateBucketIfNotExists(volumeBucket)
@@ -447,13 +422,13 @@ func newDriver(db *bolt.DB) driver {
 		log.Fatalf("Could not create bucket: %s", err)
 	}
 
-	srv := envOrDefault("SERVERS", "localhost")
+	srv := EnvOrDefault("SERVERS", "localhost")
 	servers := strings.Split(srv, ",")
 
 	driver := driver{
 		configPath:  defaultConfigPath,
-		clientName:  envOrDefault("CLIENT_NAME", defaultClientName),
-		clusterName: envOrDefault("CLUSTER_NAME", defaultClusterName),
+		clientName:  EnvOrDefault("CLIENT_NAME", defaultClientName),
+		clusterName: EnvOrDefault("CLUSTER_NAME", defaultClusterName),
 		servers:     servers,
 		mnt:         fsMounter{},
 		dir:         osDirectoryMaker{},

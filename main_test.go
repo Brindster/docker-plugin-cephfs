@@ -770,27 +770,6 @@ func TestDriver_mountVolume_keyringMissingKey(t *testing.T) {
 	}
 }
 
-func TestConnstr(t *testing.T) {
-	tests := []struct {
-		name   string
-		volume *volume
-		want   string
-	}{
-		{"default", &volume{Servers: []string{"localhost"}}, "localhost:/"},
-		{"multiple servers", &volume{Servers: []string{"serv1", "serv2", "serv3"}}, "serv1,serv2,serv3:/"},
-		{"remote path", &volume{Servers: []string{"mon1", "mon2"}, RemotePath: "/service"}, "mon1,mon2:/service"},
-		{"path missing slash", &volume{Servers: []string{"localhost"}, RemotePath: "service"}, "localhost:/service"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := connstr(tt.volume.Servers, tt.volume.RemotePath)
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("connstr() got = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
-
 type call struct {
 	method string
 	args   []interface{}
