@@ -788,6 +788,77 @@ func TestDriver_mountVolume_keyringMissingKey(t *testing.T) {
 	}
 }
 
+func TestDriver_unmountVolume_singleConnection(t *testing.T) {
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{}
+	drv := Driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	vol := &Volume{Connections: 1, MountPoint: "/mnt/test"}
+
+	got := drv.unmountVolume(vol)
+	if got != nil {
+		t.Errorf("unmountVolume() error = %s, expected nil", got)
+		return
+	}
+
+	if vol.Connections != 0 {
+		t.Errorf("unmountVolume() vol.Connections was not decremented")
+		return
+	}
+
+	if vol.MountPoint != "" {
+		t.Errorf("unmountVolume() vol.MountPoint was not set blank")
+		return
+	}
+
+	if !mnt.receivedCallWithArgs("Unmount", "/mnt/test") {
+		t.Errorf("unmountVolume() did not call Unmount with expected parameters")
+	}
+}
+
+func TestDriver_unmountVolume_multipleConnections(t *testing.T) {
+	mnt := mockMounter{}
+	dir := mockDirectoryMaker{}
+	drv := Driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	vol := &Volume{Connections: 2, MountPoint: "/mnt/test"}
+
+	got := drv.unmountVolume(vol)
+	if got != nil {
+		t.Errorf("unmountVolume() error = %s, expected nil", got)
+		return
+	}
+
+	if vol.Connections != 1 {
+		t.Errorf("unmountVolume() vol.Connections was not decremented")
+		return
+	}
+
+	if vol.MountPoint != "/mnt/test" {
+		t.Errorf("unmountVolume() vol.MountPoint was unexpectedly altered")
+		return
+	}
+
+	if mnt.receivedCall("Unmount") {
+		t.Errorf("unmountVolume() unexpectedly called Unmount")
+	}
+}
+
+func TestDriver_unmountVolume_failedUnmount(t *testing.T) {
+	want := errors.New("file in use")
+
+	mnt := mockMounter{UnmountResponse: want}
+	dir := mockDirectoryMaker{}
+	drv := Driver{DB: &bolt.DB{}, mnt: &mnt, dir: &dir}
+
+	vol := &Volume{Connections: 1, MountPoint: "/mnt/test"}
+
+	got := drv.unmountVolume(vol)
+	if got == nil || !strings.Contains(got.Error(), want.Error()) {
+		t.Errorf("unmountVolume() error = %s, expected %s", got, want)
+	}
+}
+
 type call struct {
 	method string
 	args   []interface{}
