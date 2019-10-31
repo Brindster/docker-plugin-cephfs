@@ -36,6 +36,7 @@ type driver struct {
 	clusterName string
 	mountPath   string
 	servers     []string
+	secretCache map[string]string
 	mnt         mounter
 	dir         directoryMaker
 	*bolt.DB
@@ -307,7 +308,7 @@ func (d driver) mountVolume(v *volume, mnt string) error {
 		}
 	}
 
-	secret, err := v.secret()
+	secret, err := d.secret(*v)
 	if err != nil {
 		return fmt.Errorf("error loading secret: %s", err)
 	}
@@ -366,7 +367,11 @@ func (d driver) unmountVolume(v *volume) error {
 	return nil
 }
 
-func (v volume) secret() (string, error) {
+func (d driver) secret(v volume) (string, error) {
+	if secret, ok := d.secretCache[v.ClientName]; ok {
+		return secret, nil
+	}
+
 	cnf, err := ini.Load(v.Keyring)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -384,7 +389,14 @@ func (v volume) secret() (string, error) {
 		return "", fmt.Errorf("keyring did not contain key for %s", v.ClientName)
 	}
 
-	return sec.Key("key").String(), nil
+	if d.secretCache == nil {
+		d.secretCache = make(map[string]string)
+	}
+
+	secret := sec.Key("key").String()
+	d.secretCache[v.ClientName] = secret
+
+	return secret, nil
 }
 
 func newDriver(db *bolt.DB) driver {
