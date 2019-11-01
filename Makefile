@@ -20,3 +20,9 @@ build:
 plugin:
 	docker plugin rm --force ${PLUGIN_NAME}:${PLUGIN_TAG} || true
 	docker plugin create ${PLUGIN_NAME}:${PLUGIN_TAG} build
+
+enable:
+	docker plugin enable ${PLUGIN_NAME}:${PLUGIN_TAG}
+
+push: clean build plugin enable
+	docker plugin push ${PLUGIN_NAME}:${PLUGIN_TAG}
