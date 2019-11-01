@@ -21,7 +21,7 @@ Then, copy over this keyring file to your docker hosts.
 
 ## Installation
 ```shell script
-docker plugin install --alias cephfs gplusmedia/docker-plugin-cephfs \
+docker plugin install --alias cephfs brindster/docker-plugin-cephfs \
 CLUSTER_NAME=ceph \
 CLIENT_NAME=admin \
 SERVERS=ceph1,ceph2,ceph3

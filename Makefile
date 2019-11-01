@@ -1,6 +1,6 @@
 .PHONY: all build clean plugin
 
-PLUGIN_NAME = gplusmedia/docker-plugin-cephfs
+PLUGIN_NAME = brindster/docker-plugin-cephfs
 PLUGIN_TAG ?= master
 
 all: clean build plugin
