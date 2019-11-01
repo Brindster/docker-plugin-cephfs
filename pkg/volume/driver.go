@@ -84,7 +84,10 @@ func (d Driver) Create(req *plugin.CreateRequest) error {
 		switch key {
 		case "client_name":
 			v.ClientName = val
-			v.Keyring = fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.ConfigPath, "/"), d.ClusterName, val)
+			v.Keyring = fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.ConfigPath, "/"), v.ClusterName, val)
+		case "cluster_name":
+			v.ClusterName = val
+			v.Keyring = fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.ConfigPath, "/"), val, v.ClientName)
 		case "keyring":
 			if path.IsAbs(val) {
 				v.Keyring = val

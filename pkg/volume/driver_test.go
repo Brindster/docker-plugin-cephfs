@@ -189,6 +189,14 @@ func TestDriver_Create(t *testing.T) {
 			RemotePath:  "test.7",
 			Keyring:     "/etc/ceph/test.keyring",
 		}},
+		{"with cluster_name", drv, args{&plugin.CreateRequest{Name: "test.8", Options: map[string]string{"cluster_name": "dev"}}}, false, &Volume{
+			ClientName:  defaultClientName,
+			Servers:     []string{"localhost"},
+			ClusterName: "dev",
+			ConfigPath:  defaultConfigPath,
+			RemotePath:  "test.8",
+			Keyring:     "/etc/ceph/dev.client.admin.keyring",
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
