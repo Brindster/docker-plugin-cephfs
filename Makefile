@@ -24,5 +24,5 @@ plugin:
 enable:
 	docker plugin enable ${PLUGIN_NAME}:${PLUGIN_TAG}
 
-push: clean build plugin enable
+push: plugin enable
 	docker plugin push ${PLUGIN_NAME}:${PLUGIN_TAG}
