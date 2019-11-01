@@ -86,7 +86,11 @@ func (d Driver) Create(req *plugin.CreateRequest) error {
 			v.ClientName = val
 			v.Keyring = fmt.Sprintf("%s/%s.client.%s.keyring", strings.TrimRight(d.ConfigPath, "/"), d.ClusterName, val)
 		case "keyring":
-			v.Keyring = val
+			if path.IsAbs(val) {
+				v.Keyring = val
+			} else {
+				v.Keyring = fmt.Sprintf("%s/%s", strings.TrimRight(d.ConfigPath, "/"), val)
+			}
 		case "mount_opts":
 			v.MountOpts = val
 		case "remote_path":
