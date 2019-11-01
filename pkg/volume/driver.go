@@ -324,7 +324,7 @@ func (d Driver) mountVolume(v *Volume, mnt string) error {
 
 	connStr := CephConnStr(v.Servers, "/")
 	if err = d.mnt.Mount(connStr, mountPoint, "ceph", opts); err != nil {
-		return fmt.Errorf("error mounting: %s", err)
+		return fmt.Errorf("error mounting source %s to target %s: %s", connStr, mountPoint, err)
 	}
 
 	if v.RemotePath != "" && v.RemotePath != "/" {
@@ -342,8 +342,12 @@ func (d Driver) mountVolume(v *Volume, mnt string) error {
 
 		connStr = CephConnStr(v.Servers, v.RemotePath)
 		mountPoint = path.Join(d.MountPath, mnt)
+		if err := d.dir.MakeDir(mountPoint, 0755); err != nil {
+			return fmt.Errorf("error creating mountpoint %s: %s", mountPoint, err)
+		}
+
 		if err = d.mnt.Mount(connStr, mountPoint, "ceph", opts); err != nil {
-			return fmt.Errorf("error mounting: %s", err)
+			return fmt.Errorf("error mounting source %s to target %s: %s", connStr, mountPoint, err)
 		}
 	}
 
