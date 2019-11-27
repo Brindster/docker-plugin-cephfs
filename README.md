@@ -33,6 +33,9 @@ settings act as default values, all of them are overridable when creating volume
 * *CLIENT_NAME* is the default name of the client. Defaults to _admin_.
 * *SERVERS* is a comma-delimited list of ceph monitors to connect to. Defaults to _localhost_.
 
+Also, debug mode can be enabled on the plugin to output verbose logs during plugin operation.
+Debug mode is enabled using the `DEBUG_MODE=1` value.
+
 ## Usage
 Create a volume directly from the command line:
 ```shell script
