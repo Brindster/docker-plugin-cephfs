@@ -57,3 +57,17 @@ func EnvOrDefault(param, def string) string {
 
 	return def
 }
+
+// EnvOrDefaultBool will return the environment variable cast to a boolean as appropriate, or a default if it is not set
+func EnvOrDefaultBool(param string, def bool) bool {
+	if env, ok := os.LookupEnv(param); ok {
+		switch strings.ToLower(env) {
+		case "false", "n", "no", "off", "0":
+			return false
+		default:
+			return true
+		}
+	}
+
+	return def
+}
