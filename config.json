@@ -23,14 +23,20 @@
 		{
 			"Name": "CLUSTER_NAME",
 			"Description": "Default cluster name to connect to",
-			"Settable":  ["value"],
+			"Settable": ["value"],
 			"Value": "ceph"
 		},
 		{
 			"Name": "SERVERS",
 			"Description": "Comma-delimited list of ceph monitors to connect to",
-			"Settable":  ["value"],
+			"Settable": ["value"],
 			"Value": "localhost"
+		},
+		{
+			"Name": "DEBUG_MODE",
+			"Description": "Enable verbose logging of operations",
+			"Settable": ["value"],
+			"Value": "0"
 		}
 	],
 	"mounts": [

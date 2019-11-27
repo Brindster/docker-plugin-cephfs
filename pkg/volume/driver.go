@@ -34,6 +34,7 @@ type Driver struct {
 	ConfigPath  string
 	ClientName  string
 	ClusterName string
+	DebugMode   bool
 	MountPath   string
 	Servers     []string
 	secretCache map[string]string
@@ -66,6 +67,10 @@ var bucket = []byte("volumes")
 func (d Driver) Create(req *plugin.CreateRequest) error {
 	d.Lock()
 	defer d.Unlock()
+
+	if d.DebugMode {
+		log.Printf("Received the following create request: %+v\n", req)
+	}
 
 	v := Volume{
 		ClientName:  d.ClientName,
@@ -101,6 +106,10 @@ func (d Driver) Create(req *plugin.CreateRequest) error {
 		case "servers":
 			v.Servers = strings.Split(val, ",")
 		}
+	}
+
+	if d.DebugMode {
+		log.Printf("Creating the following volume: %+v\n", v)
 	}
 
 	err := d.saveVol(req.Name, v)
@@ -152,6 +161,10 @@ func (d Driver) Get(req *plugin.GetRequest) (*plugin.GetResponse, error) {
 	d.RLock()
 	defer d.RUnlock()
 
+	if d.DebugMode {
+		log.Printf("Received the following get request: %+v\n", req)
+	}
+
 	vol, err := d.fetchVol(req.Name)
 	if err != nil {
 		return nil, fmt.Errorf("could not read from db: %s", err)
@@ -172,9 +185,17 @@ func (d Driver) Remove(req *plugin.RemoveRequest) error {
 	d.Lock()
 	defer d.Unlock()
 
+	if d.DebugMode {
+		log.Printf("Received the following remove request: %+v\n", req)
+	}
+
 	vol, err := d.fetchVol(req.Name)
 	if err != nil {
 		return fmt.Errorf("could not read from db: %s", err)
+	}
+
+	if d.DebugMode {
+		log.Printf("Volume to remove: %+v\n", vol)
 	}
 
 	if vol.Connections > 0 {
@@ -198,6 +219,10 @@ func (d Driver) Path(req *plugin.PathRequest) (*plugin.PathResponse, error) {
 	d.RLock()
 	defer d.RUnlock()
 
+	if d.DebugMode {
+		log.Printf("Received the following path request: %+v\n", req)
+	}
+
 	vol, err := d.fetchVol(req.Name)
 	if err != nil {
 		return nil, fmt.Errorf("could not read from db: %s", err)
@@ -211,13 +236,25 @@ func (d Driver) Mount(req *plugin.MountRequest) (*plugin.MountResponse, error) {
 	d.Lock()
 	defer d.Unlock()
 
+	if d.DebugMode {
+		log.Printf("Received the following mount request: %+v\n", req)
+	}
+
 	vol, err := d.fetchVol(req.Name)
 	if err != nil {
 		return nil, fmt.Errorf("could not read from db: %s", err)
 	}
 
+	if d.DebugMode {
+		log.Printf("Volume to mount: %+v\n", vol)
+	}
+
 	if err = d.mountVolume(vol, req.ID); err != nil {
 		return nil, fmt.Errorf("could not mount the vol: %s", err)
+	}
+
+	if d.DebugMode {
+		log.Printf("Volume after mounting: %+v\n", vol)
 	}
 
 	if err = d.saveVol(req.Name, *vol); err != nil {
@@ -234,13 +271,25 @@ func (d Driver) Unmount(req *plugin.UnmountRequest) error {
 	d.Lock()
 	defer d.Unlock()
 
+	if d.DebugMode {
+		log.Printf("Received the following unmount request: %+v\n", req)
+	}
+
 	vol, err := d.fetchVol(req.Name)
 	if err != nil {
 		return fmt.Errorf("could not read from db: %s", err)
 	}
 
+	if d.DebugMode {
+		log.Printf("Volume to unmount: %+v\n", vol)
+	}
+
 	if err = d.unmountVolume(vol); err != nil {
 		return fmt.Errorf("could not unmount vol: %s", err)
+	}
+
+	if d.DebugMode {
+		log.Printf("Volume after unmounting: %+v\n", vol)
 	}
 
 	if err = d.saveVol(req.Name, *vol); err != nil {
@@ -424,6 +473,7 @@ func NewDriver(db *bolt.DB) Driver {
 		ConfigPath:  defaultConfigPath,
 		ClientName:  EnvOrDefault("CLIENT_NAME", defaultClientName),
 		ClusterName: EnvOrDefault("CLUSTER_NAME", defaultClusterName),
+		DebugMode:   EnvOrDefaultBool("DEBUG_MODE", false),
 		MountPath:   EnvOrDefault("VOLUME_MOUNT_ROOT", plugin.DefaultDockerRootDirectory),
 		Servers:     servers,
 		mnt:         fsMounter{},
